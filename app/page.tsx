@@ -11,7 +11,7 @@ export default function HomePage() {
           </div>
           <LoginForm />
         </div>
-        <div className="text-center mt-6 text-sm text-slate-500">© 2024 GST Invoice Management System</div>
+        <div className="text-center mt-6 text-sm text-slate-500">© 2025 GST Inventory Management System</div>
       </div>
     </div>
   )

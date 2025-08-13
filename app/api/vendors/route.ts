@@ -20,10 +20,8 @@ export async function GET(request: NextRequest) {
           vendor_state_code,
           vendor_gst,
           vendor_address,
-          vendor_email,
           created_at
         FROM master_vendor 
-        WHERE vendor_status = 1 
         ORDER BY vendor_name ASC
       `)
 
@@ -70,10 +68,8 @@ export async function POST(request: NextRequest) {
         vendor_state_code,
         vendor_gst,
         vendor_address,
-        vendor_email,
-        vendor_status,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
     `,
       [
         vendorData.vendor_name,
@@ -83,7 +79,6 @@ export async function POST(request: NextRequest) {
         vendorData.vendor_state_code,
         vendorData.vendor_gst,
         vendorData.vendor_address,
-        vendorData.vendor_email,
       ],
     )
 

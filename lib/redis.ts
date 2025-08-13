@@ -78,14 +78,12 @@ export class RedisService {
       try {
         const keys = await this.client.keys(pattern)
         if (keys && keys.length > 0) {
-          // Delete keys one by one to avoid spread operator issues
           for (const key of keys) {
             await this.client.del(key)
           }
         }
       } catch (error) {
         console.warn("Pattern deletion not supported in Upstash REST API:", error)
-        // Alternative: maintain a set of keys for each product
       }
     }
   }
@@ -94,7 +92,6 @@ export class RedisService {
   static async getNextInvoiceNumber(year: number, month: number): Promise<number> {
     const key = `invoice_seq:${year}:${month}`
     const next = await this.client.incr(key)
-    // Set expiry for the key if it's new
     if (next === 1) {
       await this.client.expire(key, 365 * 24 * 3600) // 1 year expiry
     }
@@ -111,11 +108,14 @@ export class RedisService {
     return data ? JSON.parse(data) : null
   }
 
+  static async getRawCache(key: string): Promise<string | null> {
+    return await this.client.get<string>(key)
+  }
+
   static async invalidateCache(pattern: string): Promise<void> {
     try {
       const keys = await this.client.keys(pattern)
       if (keys && keys.length > 0) {
-        // Delete keys one by one to avoid spread operator issues
         for (const key of keys) {
           await this.client.del(key)
         }
@@ -132,7 +132,16 @@ export class RedisService {
 
   static async getCachedCustomers(): Promise<any[] | null> {
     const data = await this.client.get<string>("master:customers")
-    return data ? JSON.parse(data) : null
+    if (!data) {
+      console.log("No cache data found for master:customers")
+      return null
+    }
+    try {
+      return JSON.parse(data) as any[]
+    } catch (error) {
+      console.error("Failed to parse cached customers data:", error, "Raw data:", data)
+      return null
+    }
   }
 
   static async cacheVendors(vendors: any[]): Promise<void> {
@@ -141,7 +150,13 @@ export class RedisService {
 
   static async getCachedVendors(): Promise<any[] | null> {
     const data = await this.client.get<string>("master:vendors")
-    return data ? JSON.parse(data) : null
+    if (!data) return null
+    try {
+      return JSON.parse(data) as any[]
+    } catch (error) {
+      console.error("Failed to parse cached vendors data:", error)
+      return null
+    }
   }
 
   static async cacheProducts(products: any[]): Promise<void> {
@@ -150,7 +165,13 @@ export class RedisService {
 
   static async getCachedProducts(): Promise<any[] | null> {
     const data = await this.client.get<string>("master:products")
-    return data ? JSON.parse(data) : null
+    if (!data) return null
+    try {
+      return JSON.parse(data) as any[]
+    } catch (error) {
+      console.error("Failed to parse cached products data:", error)
+      return null
+    }
   }
 
   static async cacheHSNRates(hsnRates: any[]): Promise<void> {
@@ -159,16 +180,19 @@ export class RedisService {
 
   static async getCachedHSNRates(): Promise<any[] | null> {
     const data = await this.client.get<string>("master:hsn_rates")
-    return data ? JSON.parse(data) : null
+    if (!data) return null
+    try {
+      return JSON.parse(data) as any[]
+    } catch (error) {
+      console.error("Failed to parse cached HSN rates data:", error)
+      return null
+    }
   }
 
   // Specific cache invalidation methods
   static async invalidateVendorCache(): Promise<void> {
     try {
-      // Delete the main vendors cache
       await this.client.del("master:vendors")
-      
-      // Also delete any vendor search result caches
       const searchKeys = await this.client.keys("search:vendors:*")
       if (searchKeys && searchKeys.length > 0) {
         for (const key of searchKeys) {
@@ -182,10 +206,7 @@ export class RedisService {
 
   static async invalidateProductCache(): Promise<void> {
     try {
-      // Delete the main products cache
       await this.client.del("master:products")
-      
-      // Also delete any product search result caches
       const searchKeys = await this.client.keys("search:products:*")
       if (searchKeys && searchKeys.length > 0) {
         for (const key of searchKeys) {
@@ -199,10 +220,7 @@ export class RedisService {
 
   static async invalidateCustomerCache(): Promise<void> {
     try {
-      // Delete the main customers cache
       await this.client.del("master:customers")
-      
-      // Also delete any customer search result caches
       const searchKeys = await this.client.keys("search:customers:*")
       if (searchKeys && searchKeys.length > 0) {
         for (const key of searchKeys) {
@@ -221,7 +239,6 @@ export class RedisService {
       const current = await this.client.incr(key)
 
       if (current === 1) {
-        // First request, set expiry
         await this.client.expire(key, windowSeconds)
       }
 
@@ -249,7 +266,13 @@ export class RedisService {
   static async getCachedSearchResults(query: string): Promise<any[] | null> {
     const key = `search:${Buffer.from(query).toString("base64")}`
     const data = await this.client.get<string>(key)
-    return data ? JSON.parse(data) : null
+    if (!data) return null
+    try {
+      return JSON.parse(data) as any[]
+    } catch (error) {
+      console.error("Failed to parse cached search results:", error)
+      return null
+    }
   }
 
   static async ping(): Promise<string> {
@@ -270,13 +293,11 @@ export class RedisService {
     const entries = Object.entries(keyValuePairs)
     if (entries.length === 0) return
     
-    // Create properly typed array for mset
     const args: string[] = []
     for (const [key, value] of entries) {
       args.push(key, value)
     }
     
-    // Use apply to spread the array safely
     await (this.client.mset as any).apply(this.client, args)
   }
 }

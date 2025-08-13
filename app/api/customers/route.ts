@@ -9,32 +9,47 @@ export async function GET(request: NextRequest) {
 
     let customers = await RedisService.getCachedCustomers()
 
-    if (!customers) {
+    // Debug the raw cache data using the public method
+    const rawCacheData = await RedisService.getRawCache("master:customers")
+    if (rawCacheData) {
+      console.log("Raw cache data for master:customers:", rawCacheData)
+    } else {
+      console.log("No cache data found for master:customers")
+    }
+
+    // Handle invalid or empty cache
+    if (!customers || !Array.isArray(customers)) {
+      console.log("Cache is invalid or empty, fetching from database")
       customers = await executeQuery(`
         SELECT 
           customer_id,
           customer_name,
           customer_company_name,
           customer_gst_in,
-          customer_mobile,
+          customer_phone AS customer_mob,
           customer_email,
           customer_address,
-          customer_city,
-          customer_state,
-          customer_pincode,
+          customer_state_name,
+          customer_state_code,
+          customer_pin_code AS customer_pincode,
           customer_type,
-          customer_status,
+          is_sez,
+          is_export,
           created_at
         FROM master_customer 
-        WHERE customer_status = 1 
         ORDER BY customer_company_name ASC
       `)
 
-      await RedisService.cacheCustomers(customers)
+      if (customers && customers.length > 0) {
+        await RedisService.cacheCustomers(customers)
+      } else {
+        console.log("No customers found in database")
+        customers = []
+      }
     }
 
     if (search) {
-      const cachedSearchResults = await RedisService.getCachedSearchResults(`customers:${search}`)
+      const cachedSearchResults = await RedisService.getCachedSearchResults(search)
 
       if (cachedSearchResults) {
         return NextResponse.json({ customers: cachedSearchResults, cached: true })
@@ -47,12 +62,12 @@ export async function GET(request: NextRequest) {
           customer.customer_gst_in.toLowerCase().includes(search.toLowerCase()),
       )
 
-      await RedisService.cacheSearchResults(`customers:${search}`, filteredCustomers)
+      await RedisService.cacheSearchResults(search, filteredCustomers)
 
       return NextResponse.json({ customers: filteredCustomers, cached: false })
     }
 
-    return NextResponse.json({ customers, cached: customers !== null })
+    return NextResponse.json({ customers, cached: customers.length > 0 })
   } catch (error) {
     console.error("Customers API error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
@@ -69,33 +84,37 @@ export async function POST(request: NextRequest) {
         customer_name,
         customer_company_name,
         customer_gst_in,
-        customer_mobile,
+        customer_phone,
         customer_email,
         customer_address,
-        customer_city,
-        customer_state,
-        customer_pincode,
+        customer_state_name,
+        customer_state_code,
+        customer_pin_code,
         customer_type,
-        customer_status,
+        is_sez,
+        is_export,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
     `,
       [
         customerData.customer_name,
         customerData.customer_company_name,
         customerData.customer_gst_in,
-        customerData.customer_mobile,
-        customerData.customer_email,
+        customerData.customer_phone || null,
+        customerData.customer_email || null,
         customerData.customer_address,
-        customerData.customer_city,
-        customerData.customer_state,
-        customerData.customer_pincode,
-        customerData.customer_type,
+        customerData.customer_state_name,
+        customerData.customer_state_code,
+        customerData.customer_pin_code || null,
+        customerData.customer_type || "B2B",
+        customerData.is_sez || 0,
+        customerData.is_export || 0,
       ],
     )
 
     // Invalidate cache after creating new customer
     await RedisService.invalidateCustomerCache()
+    console.log("Customer cache invalidated after new customer creation")
 
     return NextResponse.json(
       {
