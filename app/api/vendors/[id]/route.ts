@@ -8,9 +8,12 @@ interface RouteParams {
   }
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: {params:Promise<{ id: string }> }) {
   try {
-    const vendorId = parseInt(params.id)
+
+    const { id } = await params
+    
+    const vendorId = parseInt(id)
     
     if (isNaN(vendorId)) {
       return NextResponse.json({ error: "Invalid vendor ID" }, { status: 400 })
@@ -196,8 +199,6 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         { status: 409 }
       )
     }
-
-    // Proceed with deletion
     const result = await executeUpdate(
       "DELETE FROM master_vendor WHERE vendor_id = ?",
       [vendorId]
