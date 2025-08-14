@@ -1,3 +1,4 @@
+// app/api/products/route.ts (Updated)
 import { type NextRequest, NextResponse } from "next/server"
 import { RedisService } from "@/lib/redis"
 import { executeQuery, executeInsert } from "@/lib/database"
@@ -16,13 +17,17 @@ export async function GET(request: NextRequest) {
           p.product_name,
           p.product_desc,
           p.product_type,
+          p.rate,
           h.hsn_sac_code,
+          h.hsn_sac_id,
           u.unit_name,
+          u.unit_id,
           h.gst_rate,
           p.created_at
         FROM products p
         LEFT JOIN product_units u ON p.unit_id = u.unit_id
         LEFT JOIN hsn_sac_codes h ON p.hsn_sac_id = h.hsn_sac_id
+        WHERE p.product_status = 1
         ORDER BY p.product_name ASC
       `);
 
@@ -59,6 +64,14 @@ export async function POST(request: NextRequest) {
   try {
     const productData = await request.json();
 
+    // Validate required fields
+    const requiredFields = ['product_name', 'product_desc', 'product_type', 'hsn_sac_id', 'unit_id'];
+    for (const field of requiredFields) {
+      if (!productData[field]) {
+        return NextResponse.json({ error: `${field} is required` }, { status: 400 });
+      }
+    }
+
     const result = await executeInsert(
       `
       INSERT INTO products (
@@ -67,8 +80,10 @@ export async function POST(request: NextRequest) {
         product_type,
         hsn_sac_id,
         unit_id,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, NOW())
+        rate,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
     `,
       [
         productData.product_name,
@@ -76,6 +91,7 @@ export async function POST(request: NextRequest) {
         productData.product_type,
         productData.hsn_sac_id,
         productData.unit_id,
+        productData.rate || 0,
       ]
     );
 
