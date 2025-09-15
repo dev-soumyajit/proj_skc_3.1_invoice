@@ -1,3 +1,4 @@
+//inventory/stock/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import { RedisService } from "@/lib/redis"
 import { executeQuery, executeInsert } from "@/lib/database"
@@ -83,3 +84,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+
+
