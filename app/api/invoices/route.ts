@@ -1,6 +1,6 @@
 // app/api/invoices/route.ts
 import { type NextRequest, NextResponse } from "next/server"
-import { executeQuery, executeInsert, executeUpdate } from "@/lib/database"
+import { executeQuery, executeInsert } from "@/lib/database"
 import { RedisService } from "@/lib/redis"
 import { GSTService } from "@/lib/gst-service"
 
@@ -39,7 +39,6 @@ export async function GET(request: NextRequest) {
       LIMIT ? OFFSET ?
     `, [...params, limit, offset])
 
-    // Get total count
     const countResult = await executeQuery(`
       SELECT COUNT(*) as total
       FROM tax_invoices ti
@@ -75,6 +74,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "At least one item is required" }, { status: 400 })
     }
 
+    // Validate items
+    for (const item of invoiceData.items) {
+      if (!item.product_id) {
+        return NextResponse.json({ error: "product_id is required for all items" }, { status: 400 })
+      }
+      if (!item.qty || !item.rate || !item.taxable_amt || !item.total_amount) {
+        return NextResponse.json({ error: "qty, rate, taxable_amt, and total_amount are required for all items" }, { status: 400 })
+      }
+    }
+
     // Generate invoice number
     const currentDate = new Date()
     const financialYear = currentDate.getMonth() >= 3 ? 
@@ -107,8 +116,7 @@ export async function POST(request: NextRequest) {
     let grandTotalIgstAmt = 0
     let grandTotalAmt = 0
 
-    // Determine if inter-state transaction
-    const isInterState = customer.customer_state_code !== "27" // Assuming company is in Maharashtra
+    const isInterState = customer.customer_state_code !== "27"
 
     for (const item of invoiceData.items) {
       grandTotalQty += item.qty
@@ -117,12 +125,34 @@ export async function POST(request: NextRequest) {
       if (isInterState) {
         grandTotalIgstAmt += item.igst_amt || 0
       } else {
-        grandTotalCgstAmt += item.cgst_amt
-        grandTotalSgstAmt += item.sgst_amt
+        grandTotalCgstAmt += item.cgst_amt || 0
+        grandTotalSgstAmt += item.sgst_amt || 0
       }
       
       grandTotalAmt += item.total_amount
     }
+
+    // Sanitize parameters for tax_invoices
+    const sanitizedParams = [
+      invoiceData.customer_id,
+      invoiceNo,
+      invoiceData.invoice_date,
+      invoiceData.supply_type,
+      customer.customer_company_name ?? null,
+      customer.customer_address ?? null,
+      customer.customer_gst_in ?? null,
+      customer.customer_company_name ?? null,
+      customer.customer_address ?? null,
+      customer.customer_gst_in ?? null,
+      invoiceData.place_supply ?? customer.customer_state_name ?? null,
+      grandTotalQty,
+      grandTotalTaxableAmt,
+      grandTotalCgstAmt,
+      grandTotalSgstAmt,
+      grandTotalAmt,
+      invoiceData.amount_chargeable_word ?? `Rupees ${Math.floor(grandTotalAmt).toLocaleString('en-IN')} Only`,
+      invoiceData.remarks ?? null
+    ]
 
     // Create invoice
     const invoiceResult = await executeInsert(`
@@ -137,31 +167,33 @@ export async function POST(request: NextRequest) {
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
-    `, [
-      invoiceData.customer_id,
-      invoiceNo,
-      invoiceData.invoice_date,
-      invoiceData.supply_type,
-      customer.customer_company_name,
-      customer.customer_address,
-      customer.customer_gst_in,
-      customer.customer_company_name,
-      customer.customer_address,
-      customer.customer_gst_in,
-      invoiceData.place_supply || customer.customer_state_name,
-      grandTotalQty,
-      grandTotalTaxableAmt,
-      grandTotalCgstAmt,
-      grandTotalSgstAmt,
-      grandTotalAmt,
-      invoiceData.amount_chargeable_word || `Rupees ${Math.floor(grandTotalAmt).toLocaleString('en-IN')} Only`,
-      invoiceData.remarks
-    ])
+    `, sanitizedParams)
 
     const invoiceId = invoiceResult.insertId
 
     // Insert invoice items
     for (const item of invoiceData.items) {
+      // Fetch unit_id from products table if not provided
+      let unit_id = item.unit_id
+      if (!unit_id && item.product_id) {
+        const productResult = await executeQuery(
+          "SELECT unit_id FROM products WHERE product_id = ?",
+          [item.product_id]
+        )
+        if (productResult.length === 0) {
+          throw new Error(`Product not found: ${item.product_id}`)
+        }
+        unit_id = productResult[0].unit_id
+      }
+      // Fallback to default unit_id (e.g., 1 for "Piece") if still missing
+      if (!unit_id) {
+        const defaultUnitResult = await executeQuery(
+          "SELECT unit_id FROM product_units WHERE unit_name = ?",
+          ["Piece"]
+        )
+        unit_id = defaultUnitResult.length > 0 ? defaultUnitResult[0].unit_id : 1
+      }
+
       await executeInsert(`
         INSERT INTO invoice_details (
           invoice_id, product_id, hsn_sac_code, qty, rate, unit_id,
@@ -171,20 +203,20 @@ export async function POST(request: NextRequest) {
       `, [
         invoiceId,
         item.product_id,
-        item.hsn_sac_code,
+        item.hsn_sac_code ?? null,
         item.qty,
         item.rate,
-        item.unit_id,
+        unit_id,
         item.taxable_amt,
-        isInterState ? 0 : (item.cgst_rate || 0),
-        isInterState ? 0 : (item.cgst_amt || 0),
-        isInterState ? 0 : (item.sgst_rate || 0),
-        isInterState ? 0 : (item.sgst_amt || 0),
-        isInterState ? (item.igst_rate || 0) : 0,
-        isInterState ? (item.igst_amt || 0) : 0,
+        isInterState ? 0 : (item.cgst_rate ?? 0),
+        isInterState ? 0 : (item.cgst_amt ?? 0),
+        isInterState ? 0 : (item.sgst_rate ?? 0),
+        isInterState ? 0 : (item.sgst_amt ?? 0),
+        isInterState ? (item.igst_rate ?? 0) : 0,
+        isInterState ? (item.igst_amt ?? 0) : 0,
         item.total_amount,
-        item.product_description || item.product_name,
-        item.discount || 0
+        item.product_description ?? item.product_name ?? null,
+        item.discount ?? 0
       ])
     }
 
@@ -195,8 +227,8 @@ export async function POST(request: NextRequest) {
       status: "draft"
     }, { status: 201 })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Create invoice error:", error)
-    return NextResponse.json({ error: "Failed to create invoice" }, { status: 500 })
+    return NextResponse.json({ error: `Failed to create invoice: ${error.message}` }, { status: 500 })
   }
 }

@@ -1,7 +1,8 @@
-// components/invoices/enhanced-invoice-form.tsx
+// components/invoices/enhanced-invoice-form-with-search.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { debounce } from "lodash"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,11 +12,57 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, Trash2, Calculator, Save, Send, CheckCircle, XCircle, AlertCircle } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { 
+  Plus, 
+  Trash2, 
+  Calculator, 
+  Save, 
+  Send, 
+  Search,
+  Package,
+  CheckCircle, 
+  XCircle, 
+  AlertCircle,
+  Loader2,
+  ShoppingCart
+} from "lucide-react"
 
-interface ValidationError {
-  field: string
-  message: string
+import { AdvancedProductSearch } from "../products/advanced-product-search"
+
+interface Product {
+  product_id: number
+  product_code: string
+  product_name: string
+  product_desc: string
+  product_category: string
+  brand: string
+  rate: number
+  hsn_sac_code: string
+  gst_rate: number
+  unit_name: string
+}
+
+interface InvoiceItem {
+  id: string
+  product_id: number
+  product_code: string
+  product_name: string
+  product_description: string
+  hsn_sac_code: string
+  qty: number
+  rate: number
+  unit: string
+  discount: number
+  taxable_amt: number
+  cgst_rate: number
+  cgst_amt: number
+  sgst_rate: number
+  sgst_amt: number
+  igst_rate: number
+  igst_amt: number
+  total_amount: number
 }
 
 interface InvoiceFormData {
@@ -25,26 +72,6 @@ interface InvoiceFormData {
   place_supply: string
   remarks: string
   items: InvoiceItem[]
-}
-
-interface InvoiceItem {
-  id: string
-  product_id: number
-  product_name: string
-  hsn_sac_code: string
-  qty: number
-  rate: number
-  unit: string
-  unit_id: number
-  taxable_amt: number
-  discount: number
-  cgst_rate: number
-  cgst_amt: number
-  sgst_rate: number
-  sgst_amt: number
-  igst_rate: number
-  igst_amt: number
-  total_amount: number
 }
 
 export function CreateInvoiceForm() {
@@ -58,11 +85,18 @@ export function CreateInvoiceForm() {
   })
 
   const [customers, setCustomers] = useState<any[]>([])
-  const [products, setProducts] = useState<any[]>([])
-  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
-  const [isValidating, setIsValidating] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [showProductDialog, setShowProductDialog] = useState(false)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+
+  // Quick search states
+  const [quickSearch, setQuickSearch] = useState("")
+  const [quickSearchResults, setQuickSearchResults] = useState<Product[]>([])
+  const [showQuickResults, setShowQuickResults] = useState(false)
+  const [quickSearchLoading, setQuickSearchLoading] = useState(false)
+
   const [totals, setTotals] = useState({
     totalQty: 0,
     totalTaxable: 0,
@@ -77,12 +111,43 @@ export function CreateInvoiceForm() {
 
   useEffect(() => {
     fetchCustomers()
-    fetchProducts()
   }, [])
 
   useEffect(() => {
     calculateTotals()
   }, [formData.items, selectedCustomer])
+
+  // Debounced quick search
+  const debouncedQuickSearch = useCallback(
+    debounce(async (query: string) => {
+      if (query.length < 2) {
+        setQuickSearchResults([])
+        setShowQuickResults(false)
+        return
+      }
+
+      setQuickSearchLoading(true)
+      try {
+        const response = await fetch(`/api/products/suggest?q=${encodeURIComponent(query)}&limit=10`)
+        const data = await response.json()
+        setQuickSearchResults(data.suggestions || [])
+        setShowQuickResults(true)
+      } catch (error) {
+        console.error('Quick search failed:', error)
+      } finally {
+        setQuickSearchLoading(false)
+      }
+    }, 300),
+    []
+  )
+
+  useEffect(() => {
+    if (quickSearch) {
+      debouncedQuickSearch(quickSearch)
+    } else {
+      setShowQuickResults(false)
+    }
+  }, [quickSearch, debouncedQuickSearch])
 
   const fetchCustomers = async () => {
     try {
@@ -91,47 +156,6 @@ export function CreateInvoiceForm() {
       setCustomers(data.customers || [])
     } catch (error) {
       console.error("Failed to fetch customers:", error)
-    }
-  }
-
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch("/api/products")
-      const data = await response.json()
-      setProducts(data.products || [])
-    } catch (error) {
-      console.error("Failed to fetch products:", error)
-    }
-  }
-
-  const validateForm = async (): Promise<boolean> => {
-    setIsValidating(true)
-    setValidationErrors([])
-
-    try {
-      const response = await fetch("/api/invoices/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData)
-      })
-
-      const data = await response.json()
-      
-      if (!data.valid) {
-        setValidationErrors(data.errors.map((error: string) => ({ 
-          field: 'general', 
-          message: error 
-        })))
-        return false
-      }
-
-      return true
-    } catch (error) {
-      console.error("Validation error:", error)
-      setValidationErrors([{ field: 'general', message: 'Validation failed' }])
-      return false
-    } finally {
-      setIsValidating(false)
     }
   }
 
@@ -150,30 +174,40 @@ export function CreateInvoiceForm() {
     setTotals(newTotals)
   }
 
-  const addItem = () => {
-    const newItem: InvoiceItem = {
-      id: Date.now().toString(),
-      product_id: 0,
-      product_name: "",
-      hsn_sac_code: "",
+  const addProductsToInvoice = (products: Product[]) => {
+    const newItems: InvoiceItem[] = products.map(product => ({
+      id: `${product.product_id}_${Date.now()}_${Math.random()}`,
+      product_id: product.product_id,
+      product_code: product.product_code,
+      product_name: product.product_name,
+      product_description: product.product_desc,
+      hsn_sac_code: product.hsn_sac_code,
       qty: 1,
-      rate: 0,
-      unit: "",
-      unit_id: 0,
-      taxable_amt: 0,
+      rate: product.rate || 0,
+      unit: product.unit_name,
       discount: 0,
-      cgst_rate: 0,
-      cgst_amt: 0,
-      sgst_rate: 0,
-      sgst_amt: 0,
-      igst_rate: 0,
-      igst_amt: 0,
-      total_amount: 0
-    }
+      taxable_amt: product.rate || 0,
+      cgst_rate: isInterState ? 0 : (product.gst_rate || 0) / 2,
+      cgst_amt: isInterState ? 0 : ((product.rate || 0) * (product.gst_rate || 0)) / 200,
+      sgst_rate: isInterState ? 0 : (product.gst_rate || 0) / 2,
+      sgst_amt: isInterState ? 0 : ((product.rate || 0) * (product.gst_rate || 0)) / 200,
+      igst_rate: isInterState ? (product.gst_rate || 0) : 0,
+      igst_amt: isInterState ? ((product.rate || 0) * (product.gst_rate || 0)) / 100 : 0,
+      total_amount: (product.rate || 0) + ((product.rate || 0) * (product.gst_rate || 0)) / 100
+    }))
+
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, newItem]
+      items: [...prev.items, ...newItems]
     }))
+
+    setShowProductDialog(false)
+  }
+
+  const addQuickSearchProduct = (product: Product) => {
+    addProductsToInvoice([product])
+    setQuickSearch("")
+    setShowQuickResults(false)
   }
 
   const removeItem = (id: string) => {
@@ -191,32 +225,10 @@ export function CreateInvoiceForm() {
 
         const updatedItem = { ...item, [field]: value }
 
-        // Auto-populate product details
-        if (field === "product_id") {
-          const product = products.find(p => p.product_id === value)
-          if (product) {
-            updatedItem.product_name = product.product_name
-            updatedItem.hsn_sac_code = product.hsn_sac_code
-            updatedItem.unit = product.unit_name
-            updatedItem.unit_id = product.unit_id
-            updatedItem.rate = product.rate || 0
-            
-            // Set GST rates based on inter-state or intra-state
-            if (isInterState) {
-              updatedItem.cgst_rate = 0
-              updatedItem.sgst_rate = 0
-              updatedItem.igst_rate = product.gst_rate || 0
-            } else {
-              updatedItem.cgst_rate = (product.gst_rate || 0) / 2
-              updatedItem.sgst_rate = (product.gst_rate || 0) / 2
-              updatedItem.igst_rate = 0
-            }
-          }
-        }
-
-        // Recalculate amounts when qty or rate changes
-        if (field === "qty" || field === "rate" || field === "product_id") {
-          updatedItem.taxable_amt = updatedItem.qty * updatedItem.rate - (updatedItem.discount || 0)
+        // Recalculate amounts when qty, rate, or discount changes
+        if (field === "qty" || field === "rate" || field === "discount") {
+          const baseAmount = updatedItem.qty * updatedItem.rate
+          updatedItem.taxable_amt = baseAmount - (updatedItem.discount || 0)
           
           if (isInterState) {
             updatedItem.cgst_amt = 0
@@ -234,6 +246,41 @@ export function CreateInvoiceForm() {
         return updatedItem
       })
     }))
+  }
+
+  const validateForm = async (): Promise<boolean> => {
+    const errors: string[] = []
+
+    if (!formData.customer_id) {
+      errors.push("Please select a customer")
+    }
+
+    if (!formData.invoice_date) {
+      errors.push("Invoice date is required")
+    }
+
+    if (formData.items.length === 0) {
+      errors.push("Please add at least one item to the invoice")
+    }
+
+    // Validate each item
+    formData.items.forEach((item, index) => {
+      if (!item.product_name) {
+        errors.push(`Item ${index + 1}: Product name is required`)
+      }
+      if (!item.hsn_sac_code) {
+        errors.push(`Item ${index + 1}: HSN/SAC code is required`)
+      }
+      if (item.qty <= 0) {
+        errors.push(`Item ${index + 1}: Quantity must be greater than 0`)
+      }
+      if (item.rate < 0) {
+        errors.push(`Item ${index + 1}: Rate cannot be negative`)
+      }
+    })
+
+    setValidationErrors(errors)
+    return errors.length === 0
   }
 
   const handleSubmit = async (isDraft: boolean = false) => {
@@ -279,12 +326,12 @@ export function CreateInvoiceForm() {
         }, 2000)
       } else {
         setSubmitStatus('error')
-        setValidationErrors([{ field: 'general', message: data.error || 'Failed to create invoice' }])
+        setValidationErrors([data.error || 'Failed to create invoice'])
       }
     } catch (error) {
       console.error("Submit error:", error)
       setSubmitStatus('error')
-      setValidationErrors([{ field: 'general', message: 'Network error occurred' }])
+      setValidationErrors(['Network error occurred'])
     } finally {
       setIsSubmitting(false)
     }
@@ -310,7 +357,18 @@ export function CreateInvoiceForm() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Create Invoice</h1>
+          <p className="text-muted-foreground">Generate GST-compliant invoices with advanced product search</p>
+        </div>
+        <Badge variant="outline" className="text-lg px-4 py-2">
+          {isInterState ? "Inter-State (IGST)" : "Intra-State (CGST+SGST)"}
+        </Badge>
+      </div>
+
       {/* Status Messages */}
       {validationErrors.length > 0 && (
         <Alert className="border-red-200 bg-red-50">
@@ -318,7 +376,7 @@ export function CreateInvoiceForm() {
           <AlertDescription>
             <ul className="list-disc list-inside">
               {validationErrors.map((error, index) => (
-                <li key={index} className="text-red-800">{error.message}</li>
+                <li key={index} className="text-red-800">{error}</li>
               ))}
             </ul>
           </AlertDescription>
@@ -334,11 +392,11 @@ export function CreateInvoiceForm() {
         </Alert>
       )}
 
-      {/* Invoice Header */}
+      {/* Invoice Header Form */}
       <Card>
         <CardHeader>
-          <CardTitle>Create Tax Invoice</CardTitle>
-          <CardDescription>Enter customer and invoice information for GST e-invoice generation</CardDescription>
+          <CardTitle>Invoice Details</CardTitle>
+          <CardDescription>Customer and invoice information</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -423,9 +481,6 @@ export function CreateInvoiceForm() {
                 <div>
                   <span className="text-slate-500">State:</span>
                   <div>{selectedCustomer.customer_state_name}</div>
-                  <Badge variant="outline" className="mt-1">
-                    {isInterState ? "Inter-State (IGST)" : "Intra-State (CGST+SGST)"}
-                  </Badge>
                 </div>
               </div>
             </div>
@@ -433,116 +488,173 @@ export function CreateInvoiceForm() {
         </CardContent>
       </Card>
 
-      {/* Invoice Items */}
+      {/* Product Search and Items */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Invoice Items</CardTitle>
-              <CardDescription>Add products and services to the invoice</CardDescription>
+              <CardDescription>Add products to your invoice with advanced search</CardDescription>
             </div>
-            <Button onClick={addItem}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Item
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Package className="mr-2 h-4 w-4" />
+                    Browse Products
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-6xl max-h-[90vh]">
+                  <DialogHeader>
+                    <DialogTitle>Select Products</DialogTitle>
+                  </DialogHeader>
+                  <AdvancedProductSearch 
+                    multiSelect={true}
+                    onProductSelect={addProductsToInvoice}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Quick Search Bar */}
+          <div className="relative">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Quick search products by name, code, or brand..."
+                value={quickSearch}
+                onChange={(e) => setQuickSearch(e.target.value)}
+                className="pl-10"
+              />
+              {quickSearchLoading && (
+                <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
+            
+            {/* Quick Search Results */}
+            {showQuickResults && quickSearchResults.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                {quickSearchResults.map((product) => (
+                  <div
+                    key={product.product_id}
+                    className="p-3 hover:bg-gray-100 cursor-pointer border-b flex items-center justify-between"
+                    onClick={() => addQuickSearchProduct(product)}
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{product.product_name}</div>
+                      <div className="text-xs text-gray-500">
+                        Code: {product.product_code} | Brand: {product.brand} | HSN: {product.hsn_sac_code}
+                      </div>
+                      <div className="text-xs text-blue-600">₹{product.rate} | GST: {product.gst_rate}%</div>
+                    </div>
+                    <Button size="sm" variant="outline">
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Invoice Items Table */}
           {formData.items.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              <AlertCircle className="mx-auto h-12 w-12 text-slate-300 mb-4" />
-              <p>No items added yet. Click "Add Item" to get started.</p>
+            <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
+              <ShoppingCart className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <p className="text-gray-500 mb-4">No items added yet</p>
+              <p className="text-sm text-gray-400">Use quick search above or browse products to add items</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Product</TableHead>
-                      <TableHead>HSN/SAC</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead>Taxable Amount</TableHead>
-                      <TableHead>GST</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead></TableHead>
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product Details</TableHead>
+                    <TableHead>HSN/SAC</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Rate</TableHead>
+                    <TableHead>Discount</TableHead>
+                    <TableHead>Taxable Amt</TableHead>
+                    <TableHead>GST</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {formData.items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="min-w-[200px]">
+                        <div>
+                          <div className="font-medium">{item.product_name}</div>
+                          <div className="text-xs text-gray-500 mt-1">{item.product_code}</div>
+                          {item.product_description && (
+                            <div className="text-xs text-gray-400 mt-1 line-clamp-2">
+                              {item.product_description}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{item.hsn_sac_code}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={item.qty}
+                          onChange={(e) => updateItem(item.id, "qty", parseFloat(e.target.value) || 0)}
+                          className="w-20"
+                          min="0"
+                          step="0.01"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={item.rate}
+                          onChange={(e) => updateItem(item.id, "rate", parseFloat(e.target.value) || 0)}
+                          className="w-24"
+                          min="0"
+                          step="0.01"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          value={item.discount}
+                          onChange={(e) => updateItem(item.id, "discount", parseFloat(e.target.value) || 0)}
+                          className="w-20"
+                          min="0"
+                          step="0.01"
+                        />
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">₹{item.taxable_amt.toFixed(2)}</TableCell>
+                      <TableCell>
+                        <div className="text-xs">
+                          {!isInterState && (
+                            <>
+                              <div>CGST ({item.cgst_rate}%): ₹{item.cgst_amt.toFixed(2)}</div>
+                              <div>SGST ({item.sgst_rate}%): ₹{item.sgst_amt.toFixed(2)}</div>
+                            </>
+                          )}
+                          {isInterState && (
+                            <div>IGST ({item.igst_rate}%): ₹{item.igst_amt.toFixed(2)}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono font-semibold">₹{item.total_amount.toFixed(2)}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeItem(item.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {formData.items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          <Select
-                            value={item.product_id.toString() || ""}
-                            onValueChange={(value) => updateItem(item.id, "product_id", parseInt(value))}
-                          >
-                            <SelectTrigger className="w-48">
-                              <SelectValue placeholder="Select product" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {products.map((product) => (
-                                <SelectItem key={product.product_id} value={product.product_id.toString()}>
-                                  <div>
-                                    <div className="font-medium">{product.product_name}</div>
-                                    <div className="text-xs text-slate-500">HSN: {product.hsn_sac_code}</div>
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{item.hsn_sac_code}</TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            value={item.qty}
-                            onChange={(e) => updateItem(item.id, "qty", parseFloat(e.target.value) || 0)}
-                            className="w-20"
-                            min="0"
-                            step="0.01"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            value={item.rate}
-                            onChange={(e) => updateItem(item.id, "rate", parseFloat(e.target.value) || 0)}
-                            className="w-24"
-                            min="0"
-                            step="0.01"
-                          />
-                        </TableCell>
-                        <TableCell className="font-mono">₹{item.taxable_amt.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <div className="text-xs">
-                            {!isInterState && (
-                              <>
-                                <div>CGST ({item.cgst_rate}%): ₹{item.cgst_amt.toFixed(2)}</div>
-                                <div>SGST ({item.sgst_rate}%): ₹{item.sgst_amt.toFixed(2)}</div>
-                              </>
-                            )}
-                            {isInterState && (
-                              <div>IGST ({item.igst_rate}%): ₹{item.igst_amt.toFixed(2)}</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-mono font-semibold">₹{item.total_amount.toFixed(2)}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeItem(item.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>
@@ -590,7 +702,13 @@ export function CreateInvoiceForm() {
               <div className="space-y-3">
                 <div className="flex justify-between text-lg font-semibold border-t pt-3">
                   <span>Grand Total:</span>
-                  <span className="font-mono">₹{totals.grandTotal.toFixed(2)}</span>
+                  <span className="font-mono text-blue-600">₹{totals.grandTotal.toFixed(2)}</span>
+                </div>
+                <div className="text-sm text-slate-600">
+                  <span className="italic">
+                    Rupees {Math.floor(totals.grandTotal).toLocaleString("en-IN")} and{" "}
+                    {Math.round((totals.grandTotal % 1) * 100)} Paise Only
+                  </span>
                 </div>
               </div>
             </div>
@@ -601,7 +719,7 @@ export function CreateInvoiceForm() {
                 id="remarks"
                 value={formData.remarks}
                 onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
-                placeholder="Enter any additional remarks or terms"
+                placeholder="Enter any additional remarks, terms and conditions"
                 rows={3}
               />
             </div>
@@ -622,11 +740,39 @@ export function CreateInvoiceForm() {
         <Button 
           onClick={() => handleSubmit(false)}
           disabled={isSubmitting || formData.items.length === 0 || !formData.customer_id}
+          className="bg-blue-600 hover:bg-blue-700"
         >
-          <Send className="mr-2 h-4 w-4" />
-          {isSubmitting ? 'Generating...' : 'Generate & Submit to GST'}
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <Send className="mr-2 h-4 w-4" />
+              Generate & Submit to GST
+            </>
+          )}
         </Button>
       </div>
+
+      {/* Help Section */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-blue-900 mb-1">Invoice Creation Tips:</p>
+              <ul className="text-blue-800 space-y-1">
+                <li>• Use the quick search bar to rapidly find products by name, code, or brand</li>
+                <li>• Click "Browse Products" for advanced filtering and batch selection</li>
+                <li>• GST rates are automatically calculated based on customer location</li>
+                <li>• Save as draft to continue editing later, or generate to submit to GST immediately</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

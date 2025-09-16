@@ -1,68 +1,33 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Search, MoreHorizontal, Edit, Trash2, Eye, FileText, Download, Send } from "lucide-react"
 
-// Mock data for invoices
-const invoices = [
-  {
-    invoice_id: 1,
-    invoice_no: "INV-2024-001",
-    invoice_date: "2024-02-16",
-    customer_company_name: "ABC Technologies Pvt Ltd",
-    buyer_gstin: "27AABCU9603R1ZX",
-    supply_type: "B2B",
-    grand_total_qty: 500.0,
-    grand_total_taxable_amt: 105932.2,
-    grand_total_cgst_amt: 9534.9,
-    grand_total_sgst_amt: 9534.9,
-    grand_total_amt: 125000.0,
-    status: "generated",
-    irn: "1234567890123456789012345678901234567890123456789012345678901234",
-    ack_no: "112010054812345",
-    created_at: "2024-02-16T10:30:00Z",
-  },
-  {
-    invoice_id: 2,
-    invoice_no: "INV-2024-002",
-    invoice_date: "2024-02-15",
-    customer_company_name: "XYZ Exports Ltd",
-    buyer_gstin: "06AABCU9603R1ZY",
-    supply_type: "Export",
-    grand_total_qty: 250.0,
-    grand_total_taxable_amt: 67500.0,
-    grand_total_cgst_amt: 0.0,
-    grand_total_sgst_amt: 0.0,
-    grand_total_amt: 67500.0,
-    status: "draft",
-    irn: null,
-    ack_no: null,
-    created_at: "2024-02-15T14:20:00Z",
-  },
-  {
-    invoice_id: 3,
-    invoice_no: "INV-2024-003",
-    invoice_date: "2024-02-14",
-    customer_company_name: "SEZ Manufacturing Co",
-    buyer_gstin: "24AABCU9603R1ZZ",
-    supply_type: "SEZWP",
-    grand_total_qty: 750.0,
-    grand_total_taxable_amt: 89200.0,
-    grand_total_cgst_amt: 8028.0,
-    grand_total_sgst_amt: 8028.0,
-    grand_total_amt: 105256.0,
-    status: "submitted",
-    irn: "9876543210987654321098765432109876543210987654321098765432109876",
-    ack_no: "112010054812346",
-    created_at: "2024-02-14T09:15:00Z",
-  },
-]
+interface Invoice {
+  invoice_id: number
+  invoice_no: string
+  invoice_date: string
+  customer_company_name: string
+  buyer_gstin: string
+  supply_type: string
+  grand_total_qty: number
+  grand_total_taxable_amt: number
+  grand_total_cgst_amt: number
+  grand_total_sgst_amt: number
+  grand_total_amt: number
+  status: string
+  irn: string | null
+  ack_no: string | null
+  created_at: string
+}
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -96,7 +61,37 @@ const getSupplyTypeColor = (type: string) => {
 
 export function InvoicesTable() {
   const [searchTerm, setSearchTerm] = useState("")
-  const [filteredInvoices, setFilteredInvoices] = useState(invoices)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [logsDialogOpen, setLogsDialogOpen] = useState(false)
+  const [logs, setLogs] = useState<any[]>([])
+  const [cancelReason, setCancelReason] = useState("")
+
+  useEffect(() => {
+    fetchInvoices()
+  }, [])
+
+  const fetchInvoices = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/invoices')
+      if (!response.ok) {
+        throw new Error('Failed to fetch invoices')
+      }
+      const data = await response.json()
+      setInvoices(data.invoices || [])
+      setFilteredInvoices(data.invoices || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load invoices")
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSearch = (value: string) => {
     setSearchTerm(value)
@@ -107,6 +102,81 @@ export function InvoicesTable() {
         invoice.buyer_gstin.toLowerCase().includes(value.toLowerCase()),
     )
     setFilteredInvoices(filtered)
+  }
+
+  const handleViewInvoice = (invoice: Invoice) => {
+    // Implement view logic, e.g., open a modal or navigate to detail page
+    console.log("View invoice:", invoice.invoice_id)
+    alert("View invoice functionality to be implemented")
+  }
+
+  const handleDownloadPDF = (invoice: Invoice) => {
+    // Implement PDF download logic
+    console.log("Download PDF for invoice:", invoice.invoice_id)
+    alert("PDF download functionality to be implemented")
+  }
+
+  const handleEditInvoice = (invoice: Invoice) => {
+    // Implement edit logic
+    console.log("Edit invoice:", invoice.invoice_id)
+    alert("Edit invoice functionality to be implemented")
+  }
+
+  const handleSubmitToGST = async (invoice: Invoice) => {
+    // Implement submit to GST logic
+    console.log("Submit to GST:", invoice.invoice_id)
+    alert("Submit to GST functionality to be implemented")
+  }
+
+  const handleViewGSTLogs = async (invoice: Invoice) => {
+    setSelectedInvoice(invoice)
+    setLogsDialogOpen(true)
+    // Fetch logs
+    try {
+      const response = await fetch(`/api/invoices/${invoice.invoice_id}/logs`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch logs')
+      }
+      const data = await response.json()
+      setLogs(data.logs || [])
+    } catch (err) {
+      console.error("Failed to fetch logs:", err)
+      setLogs([])
+    }
+  }
+
+  const handleCancelInvoice = (invoice: Invoice) => {
+    setSelectedInvoice(invoice)
+    setCancelDialogOpen(true)
+  }
+
+  const confirmCancel = async () => {
+    if (!selectedInvoice || !cancelReason) return
+
+    try {
+      const response = await fetch(`/api/invoices/${selectedInvoice.invoice_id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: cancelReason })
+      })
+      if (!response.ok) {
+        throw new Error('Failed to cancel invoice')
+      }
+      fetchInvoices()
+      setCancelDialogOpen(false)
+      setCancelReason("")
+    } catch (err) {
+      console.error("Failed to cancel invoice:", err)
+      alert("Failed to cancel invoice")
+    }
+  }
+
+  if (loading) {
+    return <div>Loading invoices...</div>
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>
   }
 
   return (
@@ -199,38 +269,38 @@ export function InvoicesTable() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleViewInvoice(invoice)}>
                           <Eye className="mr-2 h-4 w-4" />
                           View Invoice
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDownloadPDF(invoice)}>
                           <Download className="mr-2 h-4 w-4" />
                           Download PDF
                         </DropdownMenuItem>
                         {invoice.status === "draft" && (
                           <>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleEditInvoice(invoice)}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit Invoice
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleSubmitToGST(invoice)}>
                               <Send className="mr-2 h-4 w-4" />
                               Submit to GST
                             </DropdownMenuItem>
                           </>
                         )}
                         {invoice.status === "generated" && (
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleSubmitToGST(invoice)}>
                             <Send className="mr-2 h-4 w-4" />
                             Submit to GST
                           </DropdownMenuItem>
                         )}
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleViewGSTLogs(invoice)}>
                           <FileText className="mr-2 h-4 w-4" />
                           View GST Logs
                         </DropdownMenuItem>
                         {invoice.status !== "cancelled" && (
-                          <DropdownMenuItem className="text-red-600">
+                          <DropdownMenuItem className="text-red-600" onClick={() => handleCancelInvoice(invoice)}>
                             <Trash2 className="mr-2 h-4 w-4" />
                             Cancel Invoice
                           </DropdownMenuItem>
@@ -249,6 +319,47 @@ export function InvoicesTable() {
             <p className="text-slate-500">No invoices found matching your search.</p>
           </div>
         )}
+
+        {/* Logs Dialog */}
+        <Dialog open={logsDialogOpen} onOpenChange={setLogsDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>GST Logs for Invoice {selectedInvoice?.invoice_no}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {logs.map((log, index) => (
+                <div key={index} className="border p-4 rounded">
+                  <p>Type: {log.transaction_type}</p>
+                  <p>Status: {log.status}</p>
+                  <p>Date: {log.created_at}</p>
+                  {log.error_message && <p>Error: {log.error_message}</p>}
+                </div>
+              ))}
+              {logs.length === 0 && <p>No logs found</p>}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Dialog */}
+        <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancel Invoice {selectedInvoice?.invoice_no}</AlertDialogTitle>
+              <AlertDialogDescription>
+                Enter the reason for cancellation. This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <Input
+              placeholder="Cancellation reason"
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+            />
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmCancel}>Confirm Cancellation</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   )

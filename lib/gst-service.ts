@@ -248,12 +248,13 @@ export class GSTService {
       DocDtls: {
         Typ: "INV",
         No: invoiceData.invoice_no,
-        Dt: invoiceDate.toLocaleDateString('en-GB') // DD/MM/YYYY format
+        Dt: invoiceDate.toLocaleDateString('en-GB')
       },
       SellerDtls: {
         Gstin: settings.company_gstin,
         LglNm: settings.legal_name,
         TrdNm: settings.trade_name || settings.legal_name,
+        
         Addr1: settings.address_line1,
         Addr2: settings.address_line2 || "",
         Loc: settings.city,
