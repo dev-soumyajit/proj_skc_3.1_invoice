@@ -1,11 +1,10 @@
-// app/api/customers/[id]/route.ts - FIXED for NextJS 15
+// app/api/customers/[id]/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import { RedisService } from "@/lib/redis"
 import { executeQuery, executeUpdate } from "@/lib/database"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    // FIXED: Await params for NextJS 15
     const { id } = await params
     const customerId = parseInt(id)
 
@@ -27,9 +26,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         customer_state_code,
         customer_pin_code,
         customer_type,
-        customer_legal_name,
-        customer_trade_name,
-        customer_pan,
         is_sez,
         is_export,
         created_at,
@@ -53,7 +49,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    // Await params for NextJS 15
     const { id } = await params
     const customerId = parseInt(id)
 
@@ -74,74 +69,118 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Customer not found" }, { status: 404 })
     }
 
-    // Validate required fields
-    if (!customerData.customer_name?.trim || typeof customerData.customer_name !== 'string' || !customerData.customer_name.trim()) {
-      return NextResponse.json({ error: "Customer name is required" }, { status: 400 })
+    // Validate GST if provided
+    if (customerData.customer_gst_in !== undefined) {
+      const gst = String(customerData.customer_gst_in).trim().toUpperCase()
+      if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gst)) {
+        return NextResponse.json({ error: "Invalid GST number format" }, { status: 400 })
+      }
+      const existingGst = await executeQuery(
+        "SELECT customer_id FROM master_customer WHERE customer_gst_in = ? AND customer_id != ?",
+        [gst, customerId]
+      )
+      if (existingGst.length > 0) {
+        return NextResponse.json({ error: "GST number already exists for another customer" }, { status: 400 })
+      }
     }
-    if (!customerData.customer_company_name?.trim || typeof customerData.customer_company_name !== 'string' || !customerData.customer_company_name.trim()) {
-      return NextResponse.json({ error: "Company name is required" }, { status: 400 })
+
+    // Validate required fields if provided
+    if (customerData.customer_name !== undefined && !String(customerData.customer_name).trim()) {
+      return NextResponse.json({ error: "Customer name cannot be empty if provided" }, { status: 400 })
+    }
+    if (customerData.customer_company_name !== undefined && !String(customerData.customer_company_name).trim()) {
+      return NextResponse.json({ error: "Company name cannot be empty if provided" }, { status: 400 })
+    }
+    if (customerData.customer_address !== undefined && !String(customerData.customer_address).trim()) {
+      return NextResponse.json({ error: "Address cannot be empty if provided" }, { status: 400 })
+    }
+    if (customerData.customer_state_name !== undefined && !String(customerData.customer_state_name).trim()) {
+      return NextResponse.json({ error: "State cannot be empty if provided" }, { status: 400 })
     }
 
     // Helper function to safely handle string/number fields
     const safeStringValue = (value: any): string | null => {
-      if (value === null || value === undefined || value === '') return null
+      if (value === null || value === undefined || value === "") return null
       return String(value).trim() || null
     }
 
-    const safeNumericValue = (value: any): number | null => {
-      if (value === null || value === undefined || value === '') return null
-      const num = typeof value === 'string' ? parseInt(value.trim()) : Number(value)
-      return isNaN(num) ? null : num
+    const safeNumericValue = (value: any): string | null => {
+      if (value === null || value === undefined || value === "") return null
+      const num = typeof value === "string" ? value.trim() : String(value)
+      return num || null
     }
 
-    console.log("🔧 Processing customer data...")
+    // Build dynamic update query
+    const sets: string[] = []
+    const params: any[] = []
 
-    const result = await executeUpdate(
-      `
-      UPDATE master_customer SET
-        customer_name = ?,
-        customer_company_name = ?,
-        customer_gst_in = ?,
-        customer_phone = ?,
-        customer_email = ?,
-        customer_address = ?,
-        customer_state_name = ?,
-        customer_state_code = ?,
-        customer_pin_code = ?,
-        customer_type = ?,
-        customer_legal_name = ?,
-        customer_trade_name = ?,
-        customer_pan = ?,
-        is_sez = ?,
-        is_export = ?,
-        updated_at = NOW()
-      WHERE customer_id = ?
-      `,
-      [
-        safeStringValue(customerData.customer_name),
-        safeStringValue(customerData.customer_company_name),
-        safeStringValue(customerData.customer_gst_in)?.toUpperCase(),
-        safeStringValue(customerData.customer_phone),
-        safeStringValue(customerData.customer_email),
-        safeStringValue(customerData.customer_address),
-        safeStringValue(customerData.customer_state_name),
-        safeStringValue(customerData.customer_state_code),
-        safeNumericValue(customerData.customer_pin_code), // Handle as number
-        customerData.customer_type || "B2B",
-        safeStringValue(customerData.customer_legal_name),
-        safeStringValue(customerData.customer_trade_name),
-        safeStringValue(customerData.customer_pan),
-        customerData.is_sez ? 1 : 0,
-        customerData.is_export ? 1 : 0,
-        customerId,
-      ]
-    )
+    if (customerData.customer_name !== undefined) {
+      sets.push("customer_name = ?")
+      params.push(safeStringValue(customerData.customer_name))
+    }
+    if (customerData.customer_company_name !== undefined) {
+      sets.push("customer_company_name = ?")
+      params.push(safeStringValue(customerData.customer_company_name))
+    }
+    if (customerData.customer_gst_in !== undefined) {
+      sets.push("customer_gst_in = ?")
+      params.push(safeStringValue(customerData.customer_gst_in)?.toUpperCase())
+    }
+    if (customerData.customer_phone !== undefined) {
+      sets.push("customer_phone = ?")
+      params.push(safeStringValue(customerData.customer_phone))
+    }
+    if (customerData.customer_email !== undefined) {
+      sets.push("customer_email = ?")
+      params.push(safeStringValue(customerData.customer_email))
+    }
+    if (customerData.customer_address !== undefined) {
+      sets.push("customer_address = ?")
+      params.push(safeStringValue(customerData.customer_address))
+    }
+    if (customerData.customer_state_name !== undefined) {
+      sets.push("customer_state_name = ?")
+      params.push(safeStringValue(customerData.customer_state_name))
+    }
+    if (customerData.customer_state_code !== undefined) {
+      sets.push("customer_state_code = ?")
+      params.push(safeStringValue(customerData.customer_state_code))
+    }
+    if (customerData.customer_pin_code !== undefined) {
+      sets.push("customer_pin_code = ?")
+      params.push(safeNumericValue(customerData.customer_pin_code))
+    }
+    if (customerData.customer_type !== undefined) {
+      sets.push("customer_type = ?")
+      params.push(customerData.customer_type || "B2B")
+    }
+    if (customerData.is_sez !== undefined) {
+      sets.push("is_sez = ?")
+      params.push(customerData.is_sez ? 1 : 0)
+    }
+    if (customerData.is_export !== undefined) {
+      sets.push("is_export = ?")
+      params.push(customerData.is_export ? 1 : 0)
+    }
+
+    if (sets.length === 0) {
+      return NextResponse.json({ error: "No fields provided to update" }, { status: 400 })
+    }
+
+    let query = "UPDATE master_customer SET " + sets.join(", ") + ", updated_at = NOW() WHERE customer_id = ?"
+    params.push(customerId)
+
+    const result = await executeUpdate(query, params)
 
     console.log("✅ Update result:", result)
 
     // Invalidate cache after updating customer
-    await RedisService.invalidateCustomerCache()
-    console.log("🧹 Customer cache invalidated after customer update")
+    try {
+      await RedisService.invalidateCustomerCache()
+      console.log("🧹 Customer cache invalidated after customer update")
+    } catch (cacheError) {
+      console.error("Failed to invalidate cache:", cacheError)
+    }
 
     return NextResponse.json({
       message: "Customer updated successfully",
@@ -149,20 +188,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     })
   } catch (error) {
     console.error("💥 Update customer error:", error)
-    console.error("💥 Error details:", {
-      message: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    })
-    return NextResponse.json({ 
-      error: "Failed to update customer",
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to update customer",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    )
   }
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    // Await params for NextJS 15
     const { id } = await params
     const customerId = parseInt(id)
 
@@ -185,7 +222,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     console.log("✅ Customer found:", existingCustomer[0])
 
-    // Check if customer has any invoices (prevent deletion if has transactions)
+    // Check if customer has any invoices
     const invoiceCheck = await executeQuery(
       "SELECT COUNT(*) as count FROM tax_invoices WHERE customer_id = ?",
       [customerId]
@@ -193,10 +230,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     if (invoiceCheck[0]?.count > 0) {
       console.log("❌ Customer has invoices, cannot delete")
-      return NextResponse.json(
-        { error: "Cannot delete customer with existing invoices" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Cannot delete customer with existing invoices" }, { status: 400 })
     }
 
     // Check if customer has any receipts
@@ -207,23 +241,21 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     if (receiptCheck[0]?.count > 0) {
       console.log("❌ Customer has receipts, cannot delete")
-      return NextResponse.json(
-        { error: "Cannot delete customer with existing receipts" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Cannot delete customer with existing receipts" }, { status: 400 })
     }
 
     console.log("✅ No dependent records found, proceeding with deletion")
 
-    // STEP 1: Clear cache BEFORE deletion to prevent race conditions
-    console.log("🧹 Pre-clearing cache before deletion...")
-    await RedisService.nukeCustomerCache()
+    // Clear cache before deletion
+    try {
+      console.log("🧹 Pre-clearing cache before deletion...")
+      await RedisService.nukeCustomerCache()
+    } catch (cacheError) {
+      console.error("Failed to clear cache before deletion:", cacheError)
+    }
 
-    // STEP 2: Delete from database
-    const result = await executeUpdate(
-      "DELETE FROM master_customer WHERE customer_id = ?",
-      [customerId]
-    )
+    // Delete from database
+    const result = await executeUpdate("DELETE FROM master_customer WHERE customer_id = ?", [customerId])
 
     console.log("📊 Delete result:", result)
 
@@ -234,40 +266,40 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     console.log("✅ Customer successfully deleted from database")
 
-    // STEP 3: Aggressive cache clearing AFTER deletion
-    console.log("🧹 Post-deletion cache clearing...")
-    await RedisService.nukeCustomerCache()
-    
-    // STEP 4: Wait a moment and clear again (double-tap)
-    setTimeout(async () => {
-      console.log("🧹 Double-tap cache clearing...")
-      await RedisService.invalidateCustomerCache()
-    }, 500)
-
-    // STEP 5: Force refresh to ensure clean state
-    await RedisService.forceRefreshCustomerCache()
+    // Clear cache after deletion
+    try {
+      console.log("🧹 Post-deletion cache clearing...")
+      await RedisService.nukeCustomerCache()
+      setTimeout(async () => {
+        console.log("🧹 Double-tap cache clearing...")
+        await RedisService.invalidateCustomerCache()
+      }, 500)
+      await RedisService.forceRefreshCustomerCache()
+    } catch (cacheError) {
+      console.error("Failed to clear cache after deletion:", cacheError)
+    }
 
     console.log("🎉 Customer deletion and cache clearing completed")
 
     return NextResponse.json({
       message: "Customer deleted successfully",
       affectedRows: result.affectedRows,
-      deletedCustomer: existingCustomer[0].customer_company_name
+      deletedCustomer: existingCustomer[0].customer_company_name,
     })
   } catch (error) {
     console.error("💥 Delete customer error:", error)
-    
-    // Try to clear cache even on error to prevent stale data
     try {
       await RedisService.invalidateCustomerCache()
       console.log("🧹 Cache cleared despite error")
     } catch (cacheError) {
       console.error("💥 Cache clearing also failed:", cacheError)
     }
-    
-    return NextResponse.json({ 
-      error: "Failed to delete customer",
-      details: error instanceof Error ? error.message : "Unknown error"
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Failed to delete customer",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    )
   }
 }

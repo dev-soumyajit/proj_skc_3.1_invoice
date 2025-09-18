@@ -17,12 +17,12 @@ interface Customer {
   customer_name: string
   customer_company_name: string
   customer_gst_in: string
-  customer_phone?: string
-  customer_email?: string
+  customer_phone?: string | null
+  customer_email?: string | null
   customer_address: string
   customer_state_name: string
   customer_state_code: string
-  customer_pin_code?: string
+  customer_pin_code?: string | null
   customer_type: "B2B" | "SEZ" | "Export"
   is_sez: boolean
   is_export: boolean
@@ -49,16 +49,31 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
     customer_name: "",
     customer_company_name: "",
     customer_gst_in: "",
-    customer_phone: "",
-    customer_email: "",
+    customer_phone: null,
+    customer_email: null,
     customer_address: "",
     customer_state_name: "",
     customer_state_code: "",
-    customer_pin_code: "",
+    customer_pin_code: null,
     customer_type: "B2B",
     is_sez: false,
     is_export: false,
   })
+
+  // GSTIN regex: 15 chars, first 2 digits state code, last is checksum
+  const isValidGSTIN = (gstin: string) => {
+    const re = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/
+    return re.test(gstin)
+  }
+
+  const resolveStateFromGSTIN = (gstin: string) => {
+    if (!gstin || gstin.length < 2) return
+    const code = gstin.substring(0, 2)
+    const match = states.find((s) => s.code === code)
+    if (match) {
+      setFormData((prev) => ({ ...prev, customer_state_name: match.name, customer_state_code: match.code }))
+    }
+  }
 
   // Fetch states from API
   const fetchStates = async () => {
@@ -68,10 +83,12 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
       if (response.ok) {
         const data = await response.json()
         setStates(data.states || [])
+      } else {
+        throw new Error("Failed to fetch states")
       }
     } catch (error) {
       console.error("Error fetching states:", error)
-      toast.error("Failed to load states")
+      toast.error("Failed to load states. Please try again.")
     } finally {
       setStatesLoading(false)
     }
@@ -84,18 +101,24 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
   }, [isOpen])
 
   useEffect(() => {
+    if (states.length > 0 && formData.customer_gst_in.length >= 2) {
+      resolveStateFromGSTIN(formData.customer_gst_in)
+    }
+  }, [states, formData.customer_gst_in])
+
+  useEffect(() => {
     if (customer && mode === "edit") {
       setFormData({
         customer_id: customer.customer_id,
         customer_name: customer.customer_name || "",
         customer_company_name: customer.customer_company_name || "",
         customer_gst_in: customer.customer_gst_in || "",
-        customer_phone: customer.customer_phone || "",
-        customer_email: customer.customer_email || "",
+        customer_phone: customer.customer_phone || null,
+        customer_email: customer.customer_email || null,
         customer_address: customer.customer_address || "",
         customer_state_name: customer.customer_state_name || "",
         customer_state_code: customer.customer_state_code || "",
-        customer_pin_code: customer.customer_pin_code || "",
+        customer_pin_code: customer.customer_pin_code || null,
         customer_type: customer.customer_type || "B2B",
         is_sez: customer.is_sez || false,
         is_export: customer.is_export || false,
@@ -105,12 +128,12 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
         customer_name: "",
         customer_company_name: "",
         customer_gst_in: "",
-        customer_phone: "",
-        customer_email: "",
+        customer_phone: null,
+        customer_email: null,
         customer_address: "",
         customer_state_name: "",
         customer_state_code: "",
-        customer_pin_code: "",
+        customer_pin_code: null,
         customer_type: "B2B",
         is_sez: false,
         is_export: false,
@@ -119,12 +142,17 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
   }, [customer, mode, isOpen])
 
   const handleStateChange = (stateName: string) => {
-    const state = states.find(s => s.name === stateName)
-    setFormData(prev => ({
+    const state = states.find((s) => s.name === stateName)
+    setFormData((prev) => ({
       ...prev,
       customer_state_name: stateName,
       customer_state_code: state?.code || "",
     }))
+  }
+
+  const handleGstinChange = (value: string) => {
+    const gstin = value.toUpperCase()
+    setFormData((prev) => ({ ...prev, customer_gst_in: gstin }))
   }
 
   const validateForm = () => {
@@ -140,6 +168,10 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
       toast.error("GST number is required")
       return false
     }
+    if (!isValidGSTIN(formData.customer_gst_in)) {
+      toast.error("Invalid GSTIN format")
+      return false
+    }
     if (!formData.customer_address.trim()) {
       toast.error("Address is required")
       return false
@@ -148,17 +180,33 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
       toast.error("State is required")
       return false
     }
+    if (states.length === 0) {
+      toast.error("State data not loaded. Please wait or refresh.")
+      return false
+    }
+    const codeFromGstin = formData.customer_gst_in.substring(0, 2)
+    if (!states.find((s) => s.code === codeFromGstin)) {
+      toast.error("GSTIN state code is invalid or unknown")
+      return false
+    }
     return true
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!validateForm()) return
 
     setLoading(true)
 
     try {
+      const submitData: Customer = {
+        ...formData,
+        customer_phone: formData.customer_phone?.trim() || null,
+        customer_email: formData.customer_email?.trim() || null,
+        customer_pin_code: formData.customer_pin_code?.trim() || null,
+      }
+
       const url = mode === "edit" ? `/api/customers/${formData.customer_id}` : "/api/customers"
       const method = mode === "edit" ? "PUT" : "POST"
 
@@ -167,7 +215,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(submitData),
       })
 
       if (response.ok) {
@@ -179,8 +227,8 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
         toast.error(error.error || `Failed to ${mode} customer`)
       }
     } catch (error) {
-      console.error("Error:", error)
-      toast.error(`Failed to ${mode} customer`)
+      console.error("Submission error:", error)
+      toast.error(`Failed to ${mode} customer: Network or server error`)
     } finally {
       setLoading(false)
     }
@@ -190,14 +238,11 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {mode === "edit" ? "Edit Customer" : "Add New Customer"}
-          </DialogTitle>
+          <DialogTitle>{mode === "edit" ? "Edit Customer" : "Add New Customer"}</DialogTitle>
           <DialogDescription>
-            {mode === "edit" 
+            {mode === "edit"
               ? "Update customer information and GST details."
-              : "Enter customer information and GST details to add a new customer."
-            }
+              : "Enter customer information and GST details to add a new customer."}
           </DialogDescription>
         </DialogHeader>
 
@@ -208,7 +253,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Input
                 id="customer_name"
                 value={formData.customer_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, customer_name: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, customer_name: e.target.value }))}
                 placeholder="Enter contact person name"
                 required
               />
@@ -218,7 +263,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Input
                 id="customer_company_name"
                 value={formData.customer_company_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, customer_company_name: e.target.value }))}
+                onChange={(e) => setFormData((prev) => ({ ...prev, customer_company_name: e.target.value }))}
                 placeholder="Enter company name"
                 required
               />
@@ -231,7 +276,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Input
                 id="customer_gst_in"
                 value={formData.customer_gst_in}
-                onChange={(e) => setFormData(prev => ({ ...prev, customer_gst_in: e.target.value.toUpperCase() }))}
+                onChange={(e) => handleGstinChange(e.target.value)}
                 placeholder="Enter GST number"
                 className="font-mono"
                 required
@@ -241,8 +286,8 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Label htmlFor="customer_phone">Phone Number</Label>
               <Input
                 id="customer_phone"
-                value={formData.customer_phone}
-                onChange={(e) => setFormData(prev => ({ ...prev, customer_phone: e.target.value }))}
+                value={formData.customer_phone || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, customer_phone: e.target.value }))}
                 placeholder="Enter phone number"
               />
             </div>
@@ -253,8 +298,8 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
             <Input
               id="customer_email"
               type="email"
-              value={formData.customer_email}
-              onChange={(e) => setFormData(prev => ({ ...prev, customer_email: e.target.value }))}
+              value={formData.customer_email || ""}
+              onChange={(e) => setFormData((prev) => ({ ...prev, customer_email: e.target.value }))}
               placeholder="Enter email address"
             />
           </div>
@@ -264,7 +309,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
             <Textarea
               id="customer_address"
               value={formData.customer_address}
-              onChange={(e) => setFormData(prev => ({ ...prev, customer_address: e.target.value }))}
+              onChange={(e) => setFormData((prev) => ({ ...prev, customer_address: e.target.value }))}
               placeholder="Enter complete address"
               rows={3}
               required
@@ -274,11 +319,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="customer_state_name">State *</Label>
-              <Select 
-                value={formData.customer_state_name} 
-                onValueChange={handleStateChange}
-                disabled={statesLoading}
-              >
+              <Select value={formData.customer_state_name} onValueChange={handleStateChange} disabled={statesLoading}>
                 <SelectTrigger>
                   <SelectValue placeholder={statesLoading ? "Loading states..." : "Select state"} />
                 </SelectTrigger>
@@ -295,8 +336,8 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Label htmlFor="customer_pin_code">PIN Code</Label>
               <Input
                 id="customer_pin_code"
-                value={formData.customer_pin_code}
-                onChange={(e) => setFormData(prev => ({ ...prev, customer_pin_code: e.target.value }))}
+                value={formData.customer_pin_code || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, customer_pin_code: e.target.value }))}
                 placeholder="Enter PIN code"
                 maxLength={6}
               />
@@ -307,7 +348,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
             <Label htmlFor="customer_type">Customer Type</Label>
             <Select
               value={formData.customer_type}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, customer_type: value as "B2B" | "SEZ" | "Export" }))}
+              onValueChange={(value) => setFormData((prev) => ({ ...prev, customer_type: value as "B2B" | "SEZ" | "Export" }))}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -325,7 +366,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Checkbox
                 id="is_sez"
                 checked={formData.is_sez}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_sez: checked as boolean }))}
+                onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, is_sez: checked as boolean }))}
               />
               <Label htmlFor="is_sez">SEZ Customer</Label>
             </div>
@@ -333,7 +374,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
               <Checkbox
                 id="is_export"
                 checked={formData.is_export}
-                onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_export: checked as boolean }))}
+                onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, is_export: checked as boolean }))}
               />
               <Label htmlFor="is_export">Export Customer</Label>
             </div>
@@ -343,7 +384,7 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || statesLoading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {mode === "edit" ? "Update Customer" : "Add Customer"}
             </Button>

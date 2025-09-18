@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
         ORDER BY vendor_name ASC
       `)
 
+      console.log('Database vendors:', vendors) // Debug database query
+
       await RedisService.cacheVendors(vendors)
     }
 
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
       const cachedSearchResults = await RedisService.getCachedSearchResults(`vendors:${search}`)
 
       if (cachedSearchResults) {
-        return NextResponse.json({ vendors: cachedSearchResults, cached: true })
+        return NextResponse.json({ success: true, data: cachedSearchResults, cached: true })
       }
 
       const filteredVendors = vendors.filter(
@@ -46,13 +48,13 @@ export async function GET(request: NextRequest) {
 
       await RedisService.cacheSearchResults(`vendors:${search}`, filteredVendors)
 
-      return NextResponse.json({ vendors: filteredVendors, cached: false })
+      return NextResponse.json({ success: true, data: filteredVendors, cached: false })
     }
 
-    return NextResponse.json({ vendors, cached: vendors !== null })
+    return NextResponse.json({ success: true, data: vendors, cached: vendors !== null })
   } catch (error) {
     console.error("Vendors API error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
   }
 }
 

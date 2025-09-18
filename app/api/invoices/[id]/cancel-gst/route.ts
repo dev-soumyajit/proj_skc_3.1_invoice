@@ -1,6 +1,6 @@
 // app/api/invoices/[id]/cancel-gst/route.ts
 import { type NextRequest, NextResponse } from "next/server"
-import { GSTService } from "@/lib/gst-service"
+import { CompleteEInvoiceService } from "@/lib/gst-service"
 
 export async function POST(
   request: NextRequest,
@@ -20,7 +20,7 @@ export async function POST(
       return NextResponse.json({ error: "Cancellation reason is required" }, { status: 400 })
     }
 
-    const gstService = GSTService.getInstance()
+    const gstService = CompleteEInvoiceService.getInstance()
     const result = await gstService.cancelInvoice(invoiceId, reason, remarks)
 
     if (result.Status === 1) {

@@ -49,13 +49,19 @@ export function VendorsTable({ onEditVendor }: VendorsTableProps) {
       setError(null)
       const response = await fetch("/api/vendors")
       if (!response.ok) {
-        throw new Error("Failed to fetch vendors")
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
-      setVendors(data.vendors || [])
-      setFilteredVendors(data.vendors || [])
+      console.log('Vendor API response:', data) // Debug the response
+      if (data.success) {
+        setVendors(data.data || [])
+        setFilteredVendors(data.data || [])
+      } else {
+        throw new Error(data.error || "Failed to fetch vendors")
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load vendors")
+      toast.error(err instanceof Error ? err.message : "Failed to load vendors")
     } finally {
       setLoading(false)
     }
@@ -346,4 +352,4 @@ export function VendorsTable({ onEditVendor }: VendorsTableProps) {
       </AlertDialog>
     </>
   )
-}
+} 

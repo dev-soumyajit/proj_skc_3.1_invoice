@@ -12,7 +12,7 @@ export default function PurchasesPage() {
             <h1 className="text-3xl font-bold text-slate-900">Purchase Orders</h1>
             <p className="text-slate-600 mt-2">Track and manage incoming inventory from vendors</p>
           </div>
-          <div className="flex items-center space-x-2">
+          {/* <div className="flex items-center space-x-2">
             <Button variant="outline">
               <Download className="mr-2 h-4 w-4" />
               Export Purchases
@@ -21,7 +21,7 @@ export default function PurchasesPage() {
               <Plus className="mr-2 h-4 w-4" />
               Add Purchase
             </Button>
-          </div>
+          </div> */}
         </div>
         <PurchasesTable />
       </div>

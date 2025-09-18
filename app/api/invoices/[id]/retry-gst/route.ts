@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { GSTService } from "@/lib/gst-service"
+import { CompleteEInvoiceService } from "@/lib/gst-service"
 
 export async function POST(
   request: NextRequest,
@@ -13,7 +13,7 @@ export async function POST(
       return NextResponse.json({ error: "Invalid invoice ID" }, { status: 400 })
     }
 
-    const gstService = GSTService.getInstance()
+    const gstService = CompleteEInvoiceService.getInstance()
     const result = await gstService.retryFailedInvoice(invoiceId)
 
     if (result.Status === 1) {

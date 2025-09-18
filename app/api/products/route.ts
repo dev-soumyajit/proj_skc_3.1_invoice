@@ -4,108 +4,136 @@ import { RedisService } from "@/lib/redis"
 import { executeQuery, executeInsert } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const search = searchParams.get("search");
+	try {
+		const { searchParams } = new URL(request.url);
+		const search = searchParams.get("search");
 
-    let products = await RedisService.getCachedProducts();
+		let products = await RedisService.getCachedProducts();
 
-    if (!products) {
-      products = await executeQuery(`
-        SELECT 
-          p.product_id,
-          p.product_name,
-          p.product_desc,
-          p.product_type,
-          p.rate,
-          h.hsn_sac_code,
-          h.hsn_sac_id,
-          u.unit_name,
-          u.unit_id,
-          h.gst_rate,
-          p.created_at
-        FROM products p
-        LEFT JOIN product_units u ON p.unit_id = u.unit_id
-        LEFT JOIN hsn_sac_codes h ON p.hsn_sac_id = h.hsn_sac_id
-        WHERE p.product_status = 1
-        ORDER BY p.product_name ASC
-      `);
+		if (!products) {
+			products = await executeQuery(`
+				SELECT 
+					p.product_id,
+					p.product_name,
+					p.product_desc,
+					p.product_type,
+					p.rate,
+					h.hsn_sac_code,
+					h.hsn_sac_id,
+					u.unit_name,
+					u.unit_id,
+					h.gst_rate,
+					p.created_at
+				FROM products p
+				LEFT JOIN product_units u ON p.unit_id = u.unit_id
+				LEFT JOIN hsn_sac_codes h ON p.hsn_sac_id = h.hsn_sac_id
+				WHERE p.product_status = 1
+				ORDER BY p.product_name ASC
+			`);
 
-      await RedisService.cacheProducts(products);
-    }
+			await RedisService.cacheProducts(products);
+		}
 
-    if (search) {
-      const cachedSearchResults = await RedisService.getCachedSearchResults(`products:${search}`);
+		if (search) {
+			const cachedSearchResults = await RedisService.getCachedSearchResults(`products:${search}`);
 
-      if (cachedSearchResults) {
-        return NextResponse.json({ products: cachedSearchResults, cached: true });
-      }
+			if (cachedSearchResults) {
+				return NextResponse.json({ products: cachedSearchResults, cached: true });
+			}
 
-      const filteredProducts = products.filter(
-        (product: any) =>
-          product.product_name.toLowerCase().includes(search.toLowerCase()) ||
-          product.product_desc.toLowerCase().includes(search.toLowerCase()) ||
-          product.hsn_sac_code.includes(search)
-      );
+			const filteredProducts = products.filter(
+				(product: any) =>
+					product.product_name.toLowerCase().includes(search.toLowerCase()) ||
+					product.product_desc.toLowerCase().includes(search.toLowerCase()) ||
+					product.hsn_sac_code.includes(search)
+			);
 
-      await RedisService.cacheSearchResults(`products:${search}`, filteredProducts);
+			await RedisService.cacheSearchResults(`products:${search}`, filteredProducts);
 
-      return NextResponse.json({ products: filteredProducts, cached: false });
-    }
+			return NextResponse.json({ products: filteredProducts, cached: false });
+		}
 
-    return NextResponse.json({ products, cached: products !== null });
-  } catch (error) {
-    console.error("Products API error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+		return NextResponse.json({ products, cached: products !== null });
+	} catch (error) {
+		console.error("Products API error:", error);
+		return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+	}
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const productData = await request.json();
+	try {
+		const productData = await request.json();
 
-    // Validate required fields
-    const requiredFields = ['product_name', 'product_desc', 'product_type', 'hsn_sac_id', 'unit_id'];
-    for (const field of requiredFields) {
-      if (!productData[field]) {
-        return NextResponse.json({ error: `${field} is required` }, { status: 400 });
-      }
-    }
+		// Validate required fields
+		const requiredFields = ['product_name', 'product_desc', 'product_type', 'hsn_sac_id', 'unit_id'];
+		for (const field of requiredFields) {
+			if (!productData[field]) {
+				return NextResponse.json({ error: `${field} is required` }, { status: 400 });
+			}
+		}
 
-    const result = await executeInsert(
-      `
-      INSERT INTO products (
-        product_name,
-        product_desc,
-        product_type,
-        hsn_sac_id,
-        unit_id,
-        rate,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
-    `,
-      [
-        productData.product_name,
-        productData.product_desc,
-        productData.product_type,
-        productData.hsn_sac_id,
-        productData.unit_id,
-        productData.rate || 0,
-      ]
-    );
+		// Verify HSN exists and has an active GST rate
+		const [hsn] = await executeQuery(`
+			SELECT h.hsn_sac_id, h.hsn_sac_code
+			FROM hsn_sac_codes h
+			WHERE h.hsn_sac_id = ?
+		`, [productData.hsn_sac_id])
 
-    await RedisService.invalidateProductCache();
+		if (!hsn) {
+			return NextResponse.json({ error: "Invalid HSN/SAC selection" }, { status: 400 })
+		}
 
-    return NextResponse.json(
-      {
-        message: "Product created successfully",
-        productId: result.insertId,
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Create product error:", error);
-    return NextResponse.json({ error: "Failed to create product" }, { status: 500 });
-  }
+		const [gstRate] = await executeQuery(`
+			SELECT cgst_rate, sgst_rate, igst_rate
+			FROM gst_rates
+			WHERE hsn_sac_code = ? AND is_active = 1
+			ORDER BY effective_from DESC
+			LIMIT 1
+		`, [hsn.hsn_sac_code])
+
+		if (!gstRate) {
+			return NextResponse.json({ error: "No active GST rate configured for selected HSN" }, { status: 400 })
+		}
+
+		const result = await executeInsert(
+			`
+			INSERT INTO products (
+				product_name,
+				product_desc,
+				product_type,
+				hsn_sac_id,
+				unit_id,
+				rate,
+				created_at,
+				updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+		`,
+			[
+				productData.product_name,
+				productData.product_desc,
+				productData.product_type,
+				productData.hsn_sac_id,
+				productData.unit_id,
+				productData.rate || 0,
+			]
+		);
+
+		await RedisService.invalidateProductCache();
+
+		return NextResponse.json(
+			{
+				message: "Product created successfully",
+				productId: result.insertId,
+				gst: {
+					cgst_rate: gstRate.cgst_rate,
+					sgst_rate: gstRate.sgst_rate,
+					igst_rate: gstRate.igst_rate
+				}
+			},
+			{ status: 201 }
+		);
+	} catch (error) {
+		console.error("Create product error:", error);
+		return NextResponse.json({ error: "Failed to create product" }, { status: 500 });
+	}
 }

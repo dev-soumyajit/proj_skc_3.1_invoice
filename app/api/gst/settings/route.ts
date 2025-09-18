@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { GSTService } from "@/lib/gst-service"
+import { eInvoiceService } from "@/lib/gst-service"
 
 import { executeQuery, executeUpdate } from "@/lib/database"
 

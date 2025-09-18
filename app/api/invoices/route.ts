@@ -2,7 +2,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { executeQuery, executeInsert } from "@/lib/database"
 import { RedisService } from "@/lib/redis"
-import { GSTService } from "@/lib/gst-service"
+import { CompleteEInvoiceService } from "@/lib/gst-service"
 
 export async function GET(request: NextRequest) {
   try {
