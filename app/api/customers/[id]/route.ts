@@ -1,11 +1,16 @@
+
 // app/api/customers/[id]/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import { RedisService } from "@/lib/redis"
 import { executeQuery, executeUpdate } from "@/lib/database"
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+interface RouteParams {
+  id: string
+}
+
+export async function GET(request: NextRequest, { params }: { params: RouteParams }) {
   try {
-    const { id } = await params
+    const { id } = params
     const customerId = parseInt(id)
 
     if (isNaN(customerId)) {
@@ -42,14 +47,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({ customer: customer[0] })
   } catch (error) {
-    console.error("Get customer error:", error)
+    console.error("Get customer error details:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(request: NextRequest, context: { params: RouteParams }) {
   try {
-    const { id } = await params
+    const { params: routeParams } = context
+    const { id } = routeParams
     const customerId = parseInt(id)
 
     if (isNaN(customerId)) {
@@ -127,8 +133,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       params.push(safeStringValue(customerData.customer_gst_in)?.toUpperCase())
     }
     if (customerData.customer_phone !== undefined) {
-      sets.push("customer_phone = ?")
-      params.push(safeStringValue(customerData.customer_phone))
+      sets.push("customer_phone = ?, customer_mob = ?")  // Update both for compatibility
+      params.push(safeStringValue(customerData.customer_phone), safeStringValue(customerData.customer_phone))
     }
     if (customerData.customer_email !== undefined) {
       sets.push("customer_email = ?")
@@ -169,6 +175,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     let query = "UPDATE master_customer SET " + sets.join(", ") + ", updated_at = NOW() WHERE customer_id = ?"
     params.push(customerId)
+    console.log("Update query:", query, "Params:", params)
 
     const result = await executeUpdate(query, params)
 
@@ -187,7 +194,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       affectedRows: result.affectedRows,
     })
   } catch (error) {
-    console.error("💥 Update customer error:", error)
+    console.error("💥 Update customer error details:", error)
     return NextResponse.json(
       {
         error: "Failed to update customer",
@@ -198,9 +205,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: RouteParams }) {
   try {
-    const { id } = await params
+    const { id } = params
     const customerId = parseInt(id)
 
     console.log("🗑️ DELETE request for customer ID:", customerId)
@@ -256,8 +263,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     // Delete from database
     const result = await executeUpdate("DELETE FROM master_customer WHERE customer_id = ?", [customerId])
-
-    console.log("📊 Delete result:", result)
+    console.log("📊 Delete query result:", result)
 
     if (result.affectedRows === 0) {
       console.log("❌ No rows affected - deletion failed")
@@ -287,7 +293,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       deletedCustomer: existingCustomer[0].customer_company_name,
     })
   } catch (error) {
-    console.error("💥 Delete customer error:", error)
+    console.error("💥 Delete customer error details:", error)
     try {
       await RedisService.invalidateCustomerCache()
       console.log("🧹 Cache cleared despite error")

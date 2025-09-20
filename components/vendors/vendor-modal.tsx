@@ -92,7 +92,7 @@ export function VendorModal({ isOpen, onClose, vendor, onVendorSaved }: VendorMo
         vendor_address: ""
       })
     }
-  }, [vendor])
+  }, [vendor, isOpen])
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({
@@ -129,8 +129,8 @@ export function VendorModal({ isOpen, onClose, vendor, onVendorSaved }: VendorMo
       return false
     }
 
-    // Validate phone number
-    const phoneRegex = /^[6-9]\d{9}$/
+    // Validate phone number (basic validation)
+    const phoneRegex = /^\d{10}$/
     if (!phoneRegex.test(formData.vendor_contact_no.replace(/\D/g, ''))) {
       toast.error("Please enter a valid 10-digit phone number")
       return false
@@ -155,11 +155,11 @@ export function VendorModal({ isOpen, onClose, vendor, onVendorSaved }: VendorMo
         body: JSON.stringify(formData)
       })
 
-      if (!response.ok) {
-        throw new Error(`Failed to ${isEditing ? 'update' : 'create'} vendor`)
-      }
-
       const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || `Failed to ${isEditing ? 'update' : 'create'} vendor`)
+      }
       
       toast.success(`Vendor ${isEditing ? 'updated' : 'created'} successfully`)
       onVendorSaved?.()

@@ -22,7 +22,7 @@ interface Customer {
   customer_address: string
   customer_state_name: string
   customer_state_code: string
-  customer_pin_code?: string | null
+  customer_pin_code?: string | null  // Changed to string to match input handling
   customer_type: "B2B" | "SEZ" | "Export"
   is_sez: boolean
   is_export: boolean
@@ -49,12 +49,12 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
     customer_name: "",
     customer_company_name: "",
     customer_gst_in: "",
-    customer_phone: null,
-    customer_email: null,
+    customer_phone: "",
+    customer_email: "",
     customer_address: "",
     customer_state_name: "",
     customer_state_code: "",
-    customer_pin_code: null,
+    customer_pin_code: "",  // Initialize as empty string
     customer_type: "B2B",
     is_sez: false,
     is_export: false,
@@ -113,12 +113,12 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
         customer_name: customer.customer_name || "",
         customer_company_name: customer.customer_company_name || "",
         customer_gst_in: customer.customer_gst_in || "",
-        customer_phone: customer.customer_phone || null,
-        customer_email: customer.customer_email || null,
+        customer_phone: customer.customer_phone || "",
+        customer_email: customer.customer_email || "",
         customer_address: customer.customer_address || "",
         customer_state_name: customer.customer_state_name || "",
         customer_state_code: customer.customer_state_code || "",
-        customer_pin_code: customer.customer_pin_code || null,
+        customer_pin_code: customer.customer_pin_code ? String(customer.customer_pin_code) : "", // Convert to string
         customer_type: customer.customer_type || "B2B",
         is_sez: customer.is_sez || false,
         is_export: customer.is_export || false,
@@ -128,12 +128,12 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
         customer_name: "",
         customer_company_name: "",
         customer_gst_in: "",
-        customer_phone: null,
-        customer_email: null,
+        customer_phone: "",
+        customer_email: "",
         customer_address: "",
         customer_state_name: "",
         customer_state_code: "",
-        customer_pin_code: null,
+        customer_pin_code: "",
         customer_type: "B2B",
         is_sez: false,
         is_export: false,
@@ -192,6 +192,12 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
     return true
   }
 
+  // Helper function to safely convert to string and trim
+  const safeStringValue = (value: any): string | null => {
+    if (value === null || value === undefined || value === "") return null
+    return String(value).trim() || null
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -202,9 +208,9 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
     try {
       const submitData: Customer = {
         ...formData,
-        customer_phone: formData.customer_phone?.trim() || null,
-        customer_email: formData.customer_email?.trim() || null,
-        customer_pin_code: formData.customer_pin_code?.trim() || null,
+        customer_phone: safeStringValue(formData.customer_phone),
+        customer_email: safeStringValue(formData.customer_email),
+        customer_pin_code: safeStringValue(formData.customer_pin_code), // Fixed: use safeStringValue
       }
 
       const url = mode === "edit" ? `/api/customers/${formData.customer_id}` : "/api/customers"
@@ -218,13 +224,14 @@ export function CustomerFormModal({ isOpen, onClose, onSuccess, customer, mode }
         body: JSON.stringify(submitData),
       })
 
+      const responseData = await response.json()
+
       if (response.ok) {
         toast.success(`Customer ${mode === "edit" ? "updated" : "created"} successfully`)
         onSuccess()
         onClose()
       } else {
-        const error = await response.json()
-        toast.error(error.error || `Failed to ${mode} customer`)
+        toast.error(responseData.error || `Failed to ${mode} customer`)
       }
     } catch (error) {
       console.error("Submission error:", error)

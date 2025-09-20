@@ -9,11 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Search, MoreHorizontal, Edit, Trash2, Package, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Search, MoreHorizontal, Edit, Trash2, Package, Loader2, Plus, RefreshCw, Eye } from "lucide-react";
 import { ProductModal } from "./product-modal";
+import { ProductDetailsModal } from "./product-details-modal";
 
 export interface Product {
   product_id: number;
+  product_code?: string;
   product_name: string;
   product_desc: string;
   product_type: "raw" | "finished";
@@ -24,11 +26,18 @@ export interface Product {
   gst_rate: number;
   rate: number;
   created_at: string;
+  updated_at?: string;
   product_status: number;
 }
+
 const productTypeColors = {
   raw: "bg-orange-100 text-orange-800 border-orange-200",
   finished: "bg-green-100 text-green-800 border-green-200",
+};
+
+const productTypeLabels = {
+  raw: "Raw Material",
+  finished: "Finished Product",
 };
 
 interface ProductsTableProps {
@@ -46,6 +55,10 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  
+  // Details modal state
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [productForDetails, setProductForDetails] = useState<Product | null>(null);
   
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -65,10 +78,22 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
         throw new Error("Failed to fetch products");
       }
       const data = await response.json();
-      setProducts(data.products || []);
-      setFilteredProducts(data.products || []);
+      const productsData = Array.isArray(data.products) ? data.products : [];
+      
+      // Ensure numeric fields are properly typed
+      const normalizedProducts = productsData.map((product: any) => ({
+        ...product,
+        rate: Number(product.rate) || 0,
+        gst_rate: Number(product.gst_rate) || 0,
+        product_code: product.product_code || 'N/A'
+      }));
+      
+      setProducts(normalizedProducts);
+      setFilteredProducts(normalizedProducts);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load products");
+      setProducts([]);
+      setFilteredProducts([]);
     } finally {
       setLoading(false);
     }
@@ -76,11 +101,17 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
 
   const handleSearch = (value: string) => {
     setSearchTerm(value);
+    if (!value.trim()) {
+      setFilteredProducts(products);
+      return;
+    }
+    
     const filtered = products.filter(
       (product) =>
         product.product_name.toLowerCase().includes(value.toLowerCase()) ||
         product.product_desc.toLowerCase().includes(value.toLowerCase()) ||
-        product.hsn_sac_code.includes(value)
+        (product.hsn_sac_code && product.hsn_sac_code.includes(value)) ||
+        (product.product_code && product.product_code.toLowerCase().includes(value.toLowerCase()))
     );
     setFilteredProducts(filtered);
   };
@@ -96,6 +127,11 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
     setModalMode("edit");
     setSelectedProduct(product);
     setModalOpen(true);
+  };
+
+  const handleViewProduct = (product: Product) => {
+    setProductForDetails(product);
+    setDetailsModalOpen(true);
   };
 
   const handleDeleteProduct = (product: Product) => {
@@ -211,7 +247,7 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <Input
-                placeholder="Search products..."
+                placeholder="Search products, codes, HSN..."
                 value={searchTerm}
                 onChange={(e) => handleSearch(e.target.value)}
                 className="pl-10"
@@ -227,6 +263,7 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="min-w-[120px]">Product Code</TableHead>
                     <TableHead className="min-w-[200px]">Product Name</TableHead>
                     <TableHead className="min-w-[150px] hidden md:table-cell">Description</TableHead>
                     <TableHead className="min-w-[100px]">Type</TableHead>
@@ -238,62 +275,77 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredProducts.map((product) => (
-                    <TableRow key={product.product_id} className="hover:bg-slate-50">
-                      <TableCell className="font-medium">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Package className="h-4 w-4 text-slate-600" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-slate-900 truncate">{product.product_name}</div>
-                            <div className="text-sm text-slate-500 truncate md:hidden">{product.product_desc}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-xs hidden md:table-cell">
-                        <div className="truncate text-slate-600">{product.product_desc}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="secondary"
-                          className={productTypeColors[product.product_type as keyof typeof productTypeColors]}
-                        >
-                          {product.product_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{product.hsn_sac_code}</TableCell>
-                      <TableCell className="hidden sm:table-cell">{product.unit_name}</TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <Badge variant="outline">{product.gst_rate}%</Badge>
-                      </TableCell>
-                      <TableCell className="font-mono font-medium">
-                        ₹{typeof product.rate === 'number' ? product.rate.toFixed(2) : '0.00'}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditProduct(product)}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit Product
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-red-600"
-                              onClick={() => handleDeleteProduct(product)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete Product
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                  {filteredProducts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8">
+                        {searchTerm ? "No products found matching your search." : "No products available."}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    filteredProducts.map((product) => (
+                      <TableRow key={product.product_id} className="hover:bg-slate-50">
+                        <TableCell className="font-mono text-sm font-medium">
+                          {product.product_code || 'N/A'}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <Package className="h-4 w-4 text-slate-600" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-900 truncate">{product.product_name}</div>
+                              <div className="text-sm text-slate-500 truncate md:hidden">{product.product_desc}</div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-xs hidden md:table-cell">
+                          <div className="truncate text-slate-600">{product.product_desc}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            className={productTypeColors[product.product_type]}
+                          >
+                            {productTypeLabels[product.product_type]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{product.hsn_sac_code || 'N/A'}</TableCell>
+                        <TableCell className="hidden sm:table-cell">{product.unit_name || 'N/A'}</TableCell>
+                        <TableCell className="hidden sm:table-cell">
+                          <Badge variant="outline">{product.gst_rate}%</Badge>
+                        </TableCell>
+                        <TableCell className="font-mono font-medium">
+                          ₹{product.rate.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleViewProduct(product)}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditProduct(product)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit Product
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-red-600"
+                                onClick={() => handleDeleteProduct(product)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Product
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -330,6 +382,13 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
         product={selectedProduct}
       />
 
+      {/* Product Details Modal */}
+      <ProductDetailsModal
+        isOpen={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        product={productForDetails}
+      />
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
@@ -344,7 +403,7 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          
+          <div className="flex justify-end space-x-2">
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
@@ -360,7 +419,7 @@ export function ProductsTable({ onAddProduct }: ProductsTableProps) {
                 "Delete Product"
               )}
             </AlertDialogAction>
-          
+          </div>
         </AlertDialogContent>
       </AlertDialog>
     </>

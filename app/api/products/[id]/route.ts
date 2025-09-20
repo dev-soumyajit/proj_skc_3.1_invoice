@@ -1,4 +1,4 @@
-// app/api/products/[id]/route.ts
+// app/api/products/[id]/route.ts - FIXED VERSION
 import { type NextRequest, NextResponse } from "next/server"
 import { RedisService } from "@/lib/redis"
 import { executeQuery, executeUpdate } from "@/lib/database"
@@ -19,6 +19,7 @@ export async function GET(
     const products = await executeQuery(`
       SELECT 
         p.product_id,
+        p.product_code,
         p.product_name,
         p.product_desc,
         p.product_type,
@@ -33,7 +34,7 @@ export async function GET(
       FROM products p
       LEFT JOIN product_units u ON p.unit_id = u.unit_id
       LEFT JOIN hsn_sac_codes h ON p.hsn_sac_id = h.hsn_sac_id
-      WHERE p.product_id = ? AND p.product_status = 1
+      WHERE p.product_id = ? AND p.product_status = 1 AND p.is_active = 1
     `, [productId])
 
     if (products.length === 0) {
@@ -65,14 +66,19 @@ export async function PUT(
     // Validate required fields
     const requiredFields = ['product_name', 'product_desc', 'product_type', 'hsn_sac_id', 'unit_id']
     for (const field of requiredFields) {
-      if (!productData[field]) {
+      if (!productData[field] && productData[field] !== 0) {
         return NextResponse.json({ error: `${field} is required` }, { status: 400 })
       }
     }
 
+    // Validate product_type
+    if (!['raw', 'finished'].includes(productData.product_type)) {
+      return NextResponse.json({ error: "Product type must be 'raw' or 'finished'" }, { status: 400 });
+    }
+
     // Check if product exists
     const existingProducts = await executeQuery(
-      "SELECT product_id FROM products WHERE product_id = ? AND product_status = 1",
+      "SELECT product_id, product_code FROM products WHERE product_id = ? AND product_status = 1 AND is_active = 1",
       [productId]
     )
 
@@ -80,10 +86,45 @@ export async function PUT(
       return NextResponse.json({ error: "Product not found" }, { status: 404 })
     }
 
+    // Check if product code is being changed and if new code already exists
+    if (productData.product_code && productData.product_code !== existingProducts[0].product_code) {
+      const [existingCodeProduct] = await executeQuery(
+        "SELECT product_id FROM products WHERE product_code = ? AND product_id != ?",
+        [productData.product_code, productId]
+      );
+
+      if (existingCodeProduct) {
+        return NextResponse.json({ error: "Product code already exists" }, { status: 400 });
+      }
+    }
+
+    // Verify HSN exists
+    const [hsn] = await executeQuery(`
+      SELECT h.hsn_sac_id, h.hsn_sac_code, h.gst_rate
+      FROM hsn_sac_codes h
+      WHERE h.hsn_sac_id = ?
+    `, [productData.hsn_sac_id])
+
+    if (!hsn) {
+      return NextResponse.json({ error: "Invalid HSN/SAC selection" }, { status: 400 })
+    }
+
+    // Verify unit exists
+    const [unit] = await executeQuery(`
+      SELECT unit_id, unit_name
+      FROM product_units
+      WHERE unit_id = ?
+    `, [productData.unit_id])
+
+    if (!unit) {
+      return NextResponse.json({ error: "Invalid unit selection" }, { status: 400 })
+    }
+
     const result = await executeUpdate(
       `
       UPDATE products 
       SET 
+        product_code = ?,
         product_name = ?,
         product_desc = ?,
         product_type = ?,
@@ -94,12 +135,13 @@ export async function PUT(
       WHERE product_id = ?
       `,
       [
+        productData.product_code || existingProducts[0].product_code,
         productData.product_name,
         productData.product_desc,
         productData.product_type,
-        productData.hsn_sac_id,
-        productData.unit_id,
-        productData.rate || 0,
+        parseInt(productData.hsn_sac_id),
+        parseInt(productData.unit_id),
+        parseFloat(productData.rate) || 0,
         productId,
       ]
     )
@@ -135,7 +177,7 @@ export async function DELETE(
 
     // Check if product exists
     const existingProducts = await executeQuery(
-      "SELECT product_id FROM products WHERE product_id = ? AND product_status = 1",
+      "SELECT product_id FROM products WHERE product_id = ? AND product_status = 1 AND is_active = 1",
       [productId]
     )
 

@@ -172,9 +172,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
           <div className="ml-3">
             <p className="text-sm font-medium text-gray-900">Admin User</p>
-            <p className="text-xs text-gray-500">admin@company.com</p>
           </div>
-        </div>
+        </div> 
         <Button
           variant="ghost"
           size="sm"

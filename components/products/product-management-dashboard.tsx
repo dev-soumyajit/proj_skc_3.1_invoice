@@ -31,9 +31,16 @@ import {
 } from "lucide-react"
 
 import { AdvancedProductSearch } from "./advanced-product-search"
+import { ProductModal } from "./product-modal";
 
 export function ProductManagementDashboard() {
   const [activeTab, setActiveTab] = useState("search")
+  const [modalOpen, setModalOpen] = useState(false)
+
+  const handleModalSuccess = () => {
+    setModalOpen(false)
+    // Refresh data if needed
+  }
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -45,7 +52,7 @@ export function ProductManagementDashboard() {
         </div>
         
         <div className="flex items-center space-x-2">
-          <Dialog>
+          <Dialog open={modalOpen} onOpenChange={setModalOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
@@ -56,7 +63,13 @@ export function ProductManagementDashboard() {
               <DialogHeader>
                 <DialogTitle>Add New Product</DialogTitle>
               </DialogHeader>
-              <AddProductForm />
+              <ProductModal
+                isOpen={modalOpen}
+                onClose={() => setModalOpen(false)}
+                onSuccess={handleModalSuccess}
+                mode="create"
+                product={null}
+              />
             </DialogContent>
           </Dialog>
         </div>

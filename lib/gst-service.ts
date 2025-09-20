@@ -20,6 +20,12 @@ export interface GSTSettings {
   pincode: string
   phone?: string
   email?: string
+  retry_attempts?: string 
+  request_timeout?: string 
+  auto_submit_invoices?: string 
+  rate_limit_requests?: string 
+  webhook_url?: string 
+  custom_headers?: string 
 }
 
 export interface EInvoiceResponse {
@@ -107,7 +113,7 @@ export class CompleteEInvoiceService {
     return CompleteEInvoiceService.instance
   }
 
-  async getGSTSettings(): Promise<GSTSettings> {
+ async getGSTSettings(): Promise<GSTSettings> {
     try {
       const settings = await executeQuery(`
         SELECT setting_key, setting_value 
@@ -127,17 +133,23 @@ export class CompleteEInvoiceService {
         client_id: settingsMap.client_id || process.env.GST_API_CLIENT_ID || "",
         client_secret: settingsMap.client_secret || process.env.GST_API_CLIENT_SECRET || "",
         environment: settingsMap.environment || 'sandbox',
-        company_gstin: settingsMap.company_gstin || "27AABCU9603R1ZX",
-        legal_name: settingsMap.company_legal_name || "Your Company Name Pvt Ltd",
+        company_gstin: settingsMap.company_gstin || "",
+        legal_name: settingsMap.company_legal_name || "",
         trade_name: settingsMap.company_trade_name,
-        address_line1: settingsMap.company_address1 || "123 Business Park",
+        address_line1: settingsMap.company_address1 || "",
         address_line2: settingsMap.company_address2,
-        city: settingsMap.company_city || "Mumbai",
-        state: settingsMap.company_state || "Maharashtra",
-        state_code: settingsMap.company_state_code || "27",
-        pincode: settingsMap.company_pincode || "400069",
+        city: settingsMap.company_city || "",
+        state: settingsMap.company_state || "",
+        state_code: settingsMap.company_state_code || "",
+        pincode: settingsMap.company_pincode || "",
         phone: settingsMap.company_phone,
-        email: settingsMap.company_email
+        email: settingsMap.company_email,
+        retry_attempts: settingsMap.retry_attempts || "3",
+        request_timeout: settingsMap.request_timeout || "30",
+        auto_submit_invoices: settingsMap.auto_submit_invoices || "0",
+        rate_limit_requests: settingsMap.rate_limit_requests || "50",
+        webhook_url: settingsMap.webhook_url || "",
+        custom_headers: settingsMap.custom_headers || '{"X-Custom-Header": "value"}',
       }
     } catch (error) {
       console.error("Error fetching GST settings:", error)

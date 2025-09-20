@@ -19,7 +19,7 @@ interface Customer {
   customer_phone?: string
   customer_gst_in: string
   customer_state_name: string
-  customer_type: string
+  customer_type: "B2B" | "SEZ" | "Export"
   customer_email?: string
   customer_address: string
   customer_state_code: string
