@@ -34,6 +34,9 @@ const navigation = [
     subItems: [
       { name: "Stock Overview", href: "/inventory", icon: Package },
       { name: "Purchases", href: "/inventory/purchases", icon: ShoppingCart },
+      {name: "Stock", href: "/inventory/stock", icon: Package },
+      {name: "Stock Transfers", href: "/inventory/transfers", icon: ArrowUpDown },
+      {name: "Stock Adjustments", href: "/inventory/adjustments", icon: RotateCcw },
       { name: "Stock Issues", href: "/inventory/stockouts", icon: ArrowUpDown },
       { name: "Returns", href: "/inventory/returns", icon: RotateCcw },
     ],

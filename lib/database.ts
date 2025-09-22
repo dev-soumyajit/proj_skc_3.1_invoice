@@ -76,18 +76,51 @@ export async function executeInsert(
   params: any[] = [],
 ): Promise<{ insertId: number; affectedRows: number }> {
   try {
-    const conn = await getConnection()
-    const [result] = await conn.execute(query, params)
-    const insertResult = result as mysql.ResultSetHeader
-    return {
-      insertId: insertResult.insertId,
-      affectedRows: insertResult.affectedRows,
+    const conn = await getConnection();
+    const results = await conn.execute(query, params); // Get all results
+
+    // Log raw results for debugging
+    console.log("Raw results from conn.execute:", JSON.stringify(results, null, 2));
+
+    let insertResult: mysql.ResultSetHeader;
+
+    // Handle single or multi-result cases
+    if (Array.isArray(results) && results.length > 0) {
+      const firstResult = results[0];
+
+      if (Array.isArray(firstResult) && firstResult.length > 0 && 'insertId' in firstResult[0]) {
+        // Standard case: [ResultSetHeader, FieldPacket[]]
+        insertResult = firstResult[0] as mysql.ResultSetHeader;
+      } else if (firstResult && 'insertId' in firstResult) {
+        // Direct ResultSetHeader
+        insertResult = firstResult as mysql.ResultSetHeader;
+      } else {
+        throw new Error("Invalid first result format: " + JSON.stringify(firstResult));
+      }
+
+      // Log and filter out null/undefined extra results
+      if (results.length > 1) {
+        const extraResults = results.slice(1).filter(result => result !== null && result !== undefined);
+        if (extraResults.length > 0) {
+          console.debug("Extra valid result sets from trigger/procedure:", JSON.stringify(extraResults, null, 2));
+        } else {
+          console.debug("Extra results contained only null/undefined:", results.slice(1));
+        }
+      }
+    } else {
+      throw new Error("No results returned from insert: " + JSON.stringify(results));
     }
+
+    return {
+      insertId: Number(insertResult.insertId),
+      affectedRows: insertResult.affectedRows,
+    };
   } catch (error) {
-    console.error("Database insert error:", error)
-    throw error
+    console.error("Database insert error:", error);
+    throw error;
   }
 }
+
 
 export async function executeUpdate(
   query: string,
